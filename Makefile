@@ -26,10 +26,16 @@ status: ## Git status --short
 push:  ## Push current branch to all remotes using xargs
 	@git remote | xargs -I {} git push {} $$(git branch --show-current)
 
-sync: ## Add all, commit and push (usage: make sync m="message")
+sync: ## Add all, commit and push (usage: make sync -m "message")
 	@git add .
-	@git commit -m "$(or $(m),sync: auto-commit from Makefile)"
+	@git commit -m "$(if $(filter-out sync -m,$(MAKECMDGOALS)),$(filter-out sync -m,$(MAKECMDGOALS)),sync: auto-commit from Makefile)"
 	@$(MAKE) push
+
+# Support for -m flag and positional arguments
+-m:
+	@:
+%:
+	@:
 
 # --- Dynamic targets for sub-modules ---
 # Usage: make vm_debian_install
