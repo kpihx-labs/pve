@@ -149,7 +149,7 @@ qm set "${VMID}" --nameserver "${DNS}"
 
 # --- FORCED NETWORK SNIPPET (Vendor Layer) ---
 # Debian Cloud images often fail to parse PVE network-config V1 correctly.
-# We fix Network + DNS in bootcmd (BEFORE apt) to ensure total reachability.
+# We fix Network + DNS in bootcmd (BEFORE apt) and lock it with chattr +i.
 SNIPPET_DIR="/var/lib/vz/snippets"
 SNIPPET_FILE="fluid-deploy-${VMID}.yml"
 mkdir -p "${SNIPPET_DIR}"
@@ -162,6 +162,7 @@ bootcmd:
   - ip route add default via ${GATEWAY} || true
   - rm -f /etc/resolv.conf
   - echo "nameserver ${DNS%%,*}" > /etc/resolv.conf
+  - chattr +i /etc/resolv.conf
   - systemctl mask systemd-networkd-wait-online.service
 package_update: true
 packages:
@@ -180,6 +181,7 @@ write_files:
       Gateway=${GATEWAY}
       DNS=${DNS%%,*}
 runcmd:
+  - chattr -i /etc/resolv.conf
   - [ systemctl, stop, systemd-resolved ]
   - [ systemctl, disable, systemd-resolved ]
   - [ systemctl, restart, systemd-networkd ]
