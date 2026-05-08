@@ -1,4 +1,4 @@
-.PHONY: help status push
+.PHONY: help status push sync
 
 .DEFAULT_GOAL := help
 
@@ -25,6 +25,11 @@ status: ## Git status --short
 
 push:  ## Push current branch to all remotes using xargs
 	@git remote | xargs -I {} git push {} $$(git branch --show-current)
+
+sync: ## Add all, commit and push (use MSG="your message")
+	@git add .
+	@git commit -m "$(or $(MSG),sync: auto-commit from Makefile)"
+	@$(MAKE) push
 
 # --- Dynamic targets for sub-modules ---
 # Usage: make vm_debian_install

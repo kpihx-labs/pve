@@ -11,10 +11,10 @@ fi
 VMID="${VMID:-101}"
 
 # VMNAME: label in Proxmox UI only (Fluid keys off Fabric host id, not this string).
-VMNAME="${VMNAME:-fluid-pve-debian}"
+VMNAME="${VMNAME:-homelab}"
 
 # STORAGE: exact pool id from Datacenter → Storage (`pvesm status` / UI). Examples: local-lvm, local-zfs.
-STORAGE="${STORAGE:-local-lvm}"
+STORAGE="${STORAGE:-local-zfs}"
 
 # IMAGE: qcow path on THIS node — replace with wherever you staged Generic Cloud amd64.
 IMAGE="${IMAGE:-/var/lib/vz/template/iso/debian-12-genericcloud-amd64.qcow2}"
