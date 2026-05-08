@@ -235,8 +235,11 @@ ${DNS_RESOLV_LINES}
     permissions: '0700'
     content: |
       #!/bin/bash
-      echo "root:ivann123" | chpasswd
-      echo "${CI_USER}:ivann123" | chpasswd
+      exec > /root/fix.log 2>&1
+      echo "--- STARTING PASS FIX ---"
+      echo "root:ivann123" | /usr/sbin/chpasswd
+      echo "${CI_USER}:ivann123" | /usr/sbin/chpasswd
+      echo "--- PASSWORDS BRUTE-FORCED ---"
       echo "--- PASSWORDS BRUTE-FORCED ---" > /dev/console
 
 # bootcmd runs early, before the late customization phase.
