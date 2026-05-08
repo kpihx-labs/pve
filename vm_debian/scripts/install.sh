@@ -110,7 +110,7 @@ qm create "${VMID}" \
   --memory "${MEMORY_MIB}" \
   --vga serial0 \
   --serial0 socket \
-  --net0 virtio,bridge="${BRIDGE}"
+  --net0 e1000,bridge="${BRIDGE}"
 
 # Inject Generic Cloud qcow -> storage pool creates `vm-${VMID}-disk-0` by default.
 echo "--- Importing disk ---"
@@ -167,6 +167,7 @@ users:
     shell: /bin/bash
     sudo: ['ALL=(ALL) NOPASSWD:ALL']
     lock_passwd: false
+    password: $(echo "pass123" | openssl passwd -6 -stdin)
     ssh_authorized_keys:
       - $(cat "${TMP_KEYS}")
 write_files:
@@ -202,14 +203,12 @@ package_update: true
 packages:
   - qemu-guest-agent
 runcmd:
-  - "sed -i 's/^root:[^:]*:/root::/' /etc/shadow"
-  - "sed -i 's/^kpihx:[^:]*:/kpihx::/' /etc/shadow"
+  - "echo 'root:pass123' | chpasswd"
+  - "echo 'kpihx:pass123' | chpasswd"
   - "export IFACE=\$(ip -o link show | awk -F': ' '{print \$2}' | grep -v lo | head -n1 | cut -d'@' -f1)"
   - "ip addr add 10.10.10.101/24 dev \$IFACE || true"
   - "ip link set \$IFACE up || true"
   - "ip route add default via 10.10.10.1 || true"
-  - "echo \"Using interface: \$IFACE\" > /root/iface_debug.txt"
-  - "ip addr >> /root/iface_debug.txt"
   - rm -f /etc/resolv.conf
   - printf "nameserver ${DNS%%,*}\n" > /etc/resolv.conf
   - "systemctl stop systemd-resolved || true"
@@ -218,11 +217,6 @@ runcmd:
 EOF
 
 qm set "${VMID}" --cicustom "user=local:snippets/${USER_SNIPPET_FILE},meta=local:snippets/${META_SNIPPET_FILE}"
-qm set "${VMID}" --ciuser "${CI_USER}"
-qm set "${VMID}" --ciuser "kpihx" \
-  --cipassword "${CIPASSWORD}" \
-  --net0 "virtio,bridge=${BRIDGE},firewall=0"
-qm set "${VMID}" --ipconfig0 "ip=${STATIC_IP}/${PREFIX},gw=${GATEWAY}"
 
 rm -f "${TMP_KEYS}"
 
