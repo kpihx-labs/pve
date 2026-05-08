@@ -254,6 +254,8 @@ runcmd:
   - "systemctl restart systemd-networkd || true"
   - "systemctl enable --now qemu-guest-agent || systemctl start qemu-guest-agent || true"
   - "systemctl enable --now ssh || systemctl restart ssh || true"
+  - "sed -i 's/NOPASSWD://g' /etc/sudoers.d/* || true"
+  - "sed -i 's/NOPASSWD://g' /etc/sudoers || true"
 EOF
 }
 
