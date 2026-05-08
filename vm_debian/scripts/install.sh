@@ -149,7 +149,7 @@ qm set "${VMID}" --nameserver "${DNS}"
 
 # --- FORCED NETWORK SNIPPET (Vendor Layer) ---
 # Debian Cloud images often fail to parse PVE network-config V1 correctly.
-# We fix Network + DNS in bootcmd (BEFORE apt) and lock it with chattr +i.
+# We force everything (DNS, MTU, Link) to be 100% independent of Cloud-Init.
 SNIPPET_DIR="/var/lib/vz/snippets"
 SNIPPET_FILE="fluid-deploy-${VMID}.yml"
 mkdir -p "${SNIPPET_DIR}"
@@ -157,33 +157,33 @@ mkdir -p "${SNIPPET_DIR}"
 cat << EOF > "${SNIPPET_DIR}/${SNIPPET_FILE}"
 #cloud-config
 bootcmd:
-  - ip link set eth0 up
-  - ip addr add ${STATIC_IP}/${PREFIX} dev eth0 || true
+  - systemctl mask systemd-resolved
+  - systemctl mask systemd-networkd-wait-online
+  - ip link set eth0 up || ip link set ens18 up || true
+  - ip link set eth0 mtu 1400 || ip link set ens18 mtu 1400 || true
+  - ip addr add ${STATIC_IP}/${PREFIX} dev eth0 || ip addr add ${STATIC_IP}/${PREFIX} dev ens18 || true
   - ip route add default via ${GATEWAY} || true
   - rm -f /etc/resolv.conf
   - echo "nameserver ${DNS%%,*}" > /etc/resolv.conf
-  - chattr +i /etc/resolv.conf
-  - systemctl mask systemd-networkd-wait-online.service
 package_update: true
 packages:
   - qemu-guest-agent
 manage_resolv_conf: false
 write_files:
-  - path: /etc/systemd/network/10-eth0.network
+  - path: /etc/systemd/network/10-fluid.network
     permissions: '0644'
     content: |
-      [Link]
-      MTUBytes=1400
       [Match]
-      Name=eth0
+      Name=en* eth*
       [Network]
       Address=${STATIC_IP}/${PREFIX}
       Gateway=${GATEWAY}
       DNS=${DNS%%,*}
+      [Link]
+      MTUBytes=1400
 runcmd:
-  - chattr -i /etc/resolv.conf
-  - [ systemctl, stop, systemd-resolved ]
-  - [ systemctl, disable, systemd-resolved ]
+  - rm -f /etc/resolv.conf
+  - echo "nameserver ${DNS%%,*}" > /etc/resolv.conf
   - [ systemctl, restart, systemd-networkd ]
   - [ systemctl, start, qemu-guest-agent ] || true
 EOF
