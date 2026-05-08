@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -e
 
+if [[ $EUID -ne 0 ]]; then
+  echo "Error: This script must be run as root (use sudo)."
+  exit 1
+fi
+
 echo "=== PVE VM Purge Utility ==="
 read -p "Enter the VMID to destroy and purge: " VMID
 
