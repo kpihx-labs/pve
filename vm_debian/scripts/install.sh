@@ -181,13 +181,6 @@ qm set "${VMID}" --cicustom "user=local:snippets/${USER_SNIPPET_FILE},meta=local
 qm set "${VMID}" --ciuser "${CI_USER}"
 qm set "${VMID}" --cipassword "${CIPASSWORD}"
 
-# Inject SSH keys via temporary file on PVE for reliability
-cp /home/kpihx/.ssh/id_ed25519_pve /tmp/key_pve
-chmod 600 /tmp/key_pve
-scp -o StrictHostKeyChecking=no -i /tmp/key_pve "${TMP_KEYS}" kpihx-pve:/tmp/sshkeys_${VMID}.tmp
-ssh -o StrictHostKeyChecking=no -i /tmp/key_pve kpihx-pve "sudo qm set ${VMID} --sshkeys /tmp/sshkeys_${VMID}.tmp && rm -f /tmp/sshkeys_${VMID}.tmp"
-rm -f /tmp/key_pve
-
 qm set "${VMID}" --net0 "virtio,bridge=${BRIDGE},firewall=0"
 qm set "${VMID}" --ipconfig0 "ip=${STATIC_IP}/${PREFIX},gw=${GATEWAY}"
 
