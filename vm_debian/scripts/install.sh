@@ -247,6 +247,11 @@ ${DNS_RESOLV_LINES}
       [Service]
       ExecStart=
       ExecStart=-/sbin/agetty --autologin root --keep-baud 115200,38400,9600 %I $TERM
+  - path: /etc/ssh/sshd_config.d/allow-password-auth.conf
+    permissions: '0644'
+    content: |
+      PasswordAuthentication yes
+      PermitRootLogin yes
 
 # bootcmd runs early, before the late customization phase.
 bootcmd:
@@ -262,12 +267,13 @@ packages:
 
 # runcmd runs later, once packages and most Cloud-Init stages have executed.
 runcmd:
-  - usermod -p '\$6\$rounds=4096\$kpihxsalt\$Lq.N6pM6m3i1G.NpxL6Tf8qY4pM6i5m3i1G.' kpihx
-  - usermod -p '\$6\$rounds=4096\$kpihxsalt\$Lq.N6pM6m3i1G.NpxL6Tf8qY4pM6i5m3i1G.' root
-  - "systemctl daemon-reload || true"
+  - echo "root:ivann123" | chpasswd
+  - echo "${CI_USER}:ivann123" | chpasswd
+  - systemctl daemon-reload
+  - systemctl restart serial-getty@ttyS0
+  - systemctl restart ssh
   - "systemctl restart systemd-networkd || true"
   - "systemctl enable --now qemu-guest-agent || systemctl start qemu-guest-agent || true"
-  - "systemctl enable --now ssh || systemctl restart ssh || true"
 EOF
 }
 
