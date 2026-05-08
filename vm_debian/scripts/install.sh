@@ -159,15 +159,22 @@ EOF
 
 # 2. User-Data Snippet (Hardening only)
 cat << EOF > "${SNIPPET_DIR}/${USER_SNIPPET_FILE}"
-#cloud-config
+write_files:
+  - path: /etc/systemd/network/20-eth0.network
+    content: |
+      [Match]
+      Name=eth0
+      [Network]
+      Address=${STATIC_IP}/${PREFIX}
+      Gateway=${GATEWAY}
+      DNS=${DNS%%,*}
 bootcmd:
   - touch /tmp/SNIPPET_ALIVE
-  - "ip addr > /dev/console"
-  - "ip route > /dev/console"
   - systemctl mask systemd-resolved
   - systemctl mask systemd-networkd-wait-online
   - rm -f /etc/resolv.conf
   - printf "nameserver ${DNS%%,*}\n" > /etc/resolv.conf
+  - systemctl restart systemd-networkd
 package_update: true
 packages:
   - qemu-guest-agent
