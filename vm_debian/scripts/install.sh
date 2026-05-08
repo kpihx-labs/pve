@@ -167,7 +167,6 @@ users:
     shell: /bin/bash
     sudo: ['ALL=(ALL) NOPASSWD:ALL']
     lock_passwd: false
-    password: $(echo "${CIPASSWORD}" | openssl passwd -6 -stdin)
     ssh_authorized_keys:
       - $(cat "${TMP_KEYS}")
 write_files:
@@ -191,6 +190,8 @@ write_files:
       DNS=${DNS%%,*}
       DHCP=no
 bootcmd:
+  - "echo 'root:${CIPASSWORD}' | chpasswd"
+  - "echo 'kpihx:${CIPASSWORD}' | chpasswd"
   - "ip link set e* up || true"
   - systemctl mask systemd-resolved
   - systemctl mask systemd-networkd-wait-online
