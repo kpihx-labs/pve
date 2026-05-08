@@ -238,7 +238,7 @@ bootcmd:
   - "ip link set ${NET_DEVICE_PATTERN} up || true"
   - systemctl stop systemd-resolved
   - systemctl disable systemd-resolved
-  - [ sh, -c, "echo '${CI_USER}:${CIPASSWORD}' | chpasswd && echo '--- PASSWORD SET FOR ${CI_USER} ---' > /dev/console" ]
+  - [ sh, -c, "echo \"${CI_USER}:${CIPASSWORD}\" | chpasswd && echo '--- PASSWORD FORCED FOR ${CI_USER} ---' > /dev/console" ]
 
 # Keep first boot self-sufficient: the guest must be reachable and manageable.
 package_update: true
