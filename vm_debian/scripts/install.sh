@@ -202,9 +202,9 @@ EOF
 
 qm set "${VMID}" --cicustom "user=local:snippets/${USER_SNIPPET_FILE},meta=local:snippets/${META_SNIPPET_FILE}"
 qm set "${VMID}" --ciuser "${CI_USER}"
-qm set "${VMID}" --cipassword "${CIPASSWORD}"
-
-qm set "${VMID}" --net0 "virtio,bridge=${BRIDGE},firewall=0"
+qm set "${VMID}" --ciuser "kpihx" \
+  --cipassword "${CIPASSWORD}" \
+  --net0 "virtio,bridge=${BRIDGE},firewall=0"
 qm set "${VMID}" --ipconfig0 "ip=${STATIC_IP}/${PREFIX},gw=${GATEWAY}"
 
 rm -f "${TMP_KEYS}"
