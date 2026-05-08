@@ -28,7 +28,7 @@ REAL_HOME="$(getent passwd "${REAL_USER}" | cut -d: -f6)"
 # The goal is to keep the module reusable across nodes and networks without
 # editing the file itself for every deployment.
 VMID="${VMID:-101}"
-VMNAME="${VMNAME:-homelab}"
+VMNAME="${VMNAME:-pve-debian}"
 STORAGE="${STORAGE:-local-zfs}"
 IMAGE="${IMAGE:-/var/lib/vz/template/iso/debian-12-genericcloud-amd64.qcow2}"
 SOCKETS="${SOCKETS:-1}"
@@ -168,10 +168,16 @@ render_user_snippet() {
   # Compute the exact variant before templating the YAML.
   local lock_passwd="true"
   local password_block=""
+  local ssh_keys_block=""
 
   if [ -n "${CIPASSWORD}" ]; then
     lock_passwd="false"
-    password_block="    password: $(echo "${CIPASSWORD}" | openssl passwd -6 -stdin)"
+    password_block="    passwd: $(echo "${CIPASSWORD}" | openssl passwd -6 -stdin)"
+  fi
+
+  if [ -s "${TMP_KEYS}" ]; then
+    ssh_keys_block=$'    ssh_authorized_keys:\n'
+    ssh_keys_block+="$(awk '{printf "      - %s\n", $0}' "${TMP_KEYS}")"
   fi
 
   cat <<EOF > "${SNIPPET_DIR}/${USER_SNIPPET_FILE}"
@@ -191,6 +197,7 @@ users:
     sudo: ['ALL=(ALL) NOPASSWD:ALL']
     lock_passwd: ${lock_passwd}
 ${password_block}
+${ssh_keys_block}
 
 # Materialize the network files directly in the guest filesystem.
 write_files:
@@ -219,16 +226,18 @@ write_files:
       Address=${STATIC_IP}/${PREFIX}
       Gateway=${GATEWAY}
 ${DNS_SYSTEMD_LINES}      DHCP=no
+  - path: /etc/resolv.conf
+    permissions: '0644'
+    content: |
+${DNS_RESOLV_LINES}      search ${SEARCHDOMAIN}
 
 # bootcmd runs early, before the late customization phase.
-# Use it to keep the interface up and avoid DNS/wait-online surprises.
+# Use it only for early service state changes that must happen before the
+# later Cloud-Init stages. Do not write multiline shell fragments here.
 bootcmd:
   - "ip link set ${NET_DEVICE_PATTERN} up || true"
   - systemctl mask systemd-resolved
   - systemctl mask systemd-networkd-wait-online
-  - rm -f /etc/resolv.conf
-  - |
-$(printf '%s\n' "${DNS_RESOLV_LINES}")$(printf '      search %s\n' "${SEARCHDOMAIN}")
 
 # Keep first boot self-sufficient: the guest must be reachable and manageable.
 package_update: true
@@ -237,18 +246,15 @@ packages:
   - openssh-server
 
 # runcmd runs later, once packages and most Cloud-Init stages have executed.
-# Use it to reassert the network state and ensure the guest agent is alive.
+# Use it only for service restarts and late activation, not for raw network
+# shell reconstruction.
 runcmd:
-  - "export IFACE=\$(ip -o link show | awk -F': ' '{print \$2}' | grep -v lo | head -n1 | cut -d'@' -f1)"
-  - "ip addr add ${STATIC_IP}/${PREFIX} dev \$IFACE || true"
-  - "ip link set \$IFACE up || true"
-  - "ip route replace default via ${GATEWAY} || true"
-  - rm -f /etc/resolv.conf
-  - |
-$(printf '%s\n' "${DNS_RESOLV_LINES}")$(printf '      search %s\n' "${SEARCHDOMAIN}")
+  - "systemctl daemon-reload || true"
+  - "systemctl restart systemd-networkd || true"
   - "systemctl stop systemd-resolved || true"
   - "systemctl disable systemd-resolved || true"
-  - "systemctl start qemu-guest-agent || true"
+  - "systemctl enable --now qemu-guest-agent || systemctl start qemu-guest-agent || true"
+  - "systemctl enable --now ssh || systemctl restart ssh || true"
 EOF
 }
 

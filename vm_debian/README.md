@@ -34,6 +34,12 @@ make vm_debian_purge VMID=102
 This module is designed to be consumed directly from the repository source:
 
 ```bash
+sudo bash -c "$(curl -sSL https://raw.githubusercontent.com/kpihx-labs/pve/master/vm_debian/scripts/install.sh)"
+```
+
+or more complete
+
+```bash
 sudo VMID=110 \
   VMNAME=homelab \
   STORAGE=local-zfs \
