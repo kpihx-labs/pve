@@ -43,7 +43,7 @@ Ideal for bootstrapping new PVE nodes without cloning the entire repository. Thi
 > Use `sudo bash -c "$(curl ...)"` to ensure environment variables are correctly passed to the sub-shell and that the script has the necessary privileges to execute `qm` commands.
 
 ```bash
-sudo STORAGE=local-zfs bash -c "$(curl -sSL https://raw.githubusercontent.com/kpihx-labs/pve/master/vm_debian/scripts/install.sh)"
+sudo bash -c "$(curl -sSL https://raw.githubusercontent.com/kpihx-labs/pve/master/vm_debian/scripts/install.sh)"
 ```
 
 #### Full Variable Example
@@ -57,6 +57,7 @@ sudo VMID=110 \
   STATIC_IP=10.10.10.110 \
   GATEWAY=10.10.10.1 \
   BRIDGE=vmbr1 \
+  CI_USER=kpihx \
   bash -c "$(curl -sSL https://raw.githubusercontent.com/kpihx-labs/pve/master/vm_debian/scripts/install.sh)"
 ```
 
