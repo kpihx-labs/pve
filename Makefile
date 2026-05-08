@@ -2,11 +2,11 @@
 
 .DEFAULT_GOAL := help
 
-# --- Configuration ---
+# --- Repository layout ---------------------------------------------------------
 SUBDIRS := $(wildcard */Makefile)
 SUBDIR_NAMES := $(patsubst %/Makefile,%,$(SUBDIRS))
 
-# --- Help ---
+# --- Help ---------------------------------------------------------------------
 help:  ## Show available targets
 	@echo "Global targets:"
 	@grep -E '^[a-zA-Z_-]+:.*?##' $(MAKEFILE_LIST) | \
@@ -19,7 +19,7 @@ help:  ## Show available targets
 		  awk -v d=$$dir 'BEGIN {FS = ":.*?## "}; {printf "    %-20s %s\n", d"_"$$1, $$2}'; \
 	done
 
-# --- Global targets ---
+# --- Global targets ------------------------------------------------------------
 status: ## Git status --short
 	@git status --short
 
@@ -31,7 +31,7 @@ sync: ## Add all, commit and push (usage: make sync M="message")
 	@git commit -m "$(or $(M),sync: auto-commit from Makefile)"
 	@$(MAKE) push
 
-# --- Dynamic targets for sub-modules ---
+# --- Dynamic sub-module dispatch ----------------------------------------------
 # Usage: make vm_debian_install
 $(foreach dir,$(SUBDIR_NAMES),$(eval \
     $(dir)_%: ; @$(MAKE) -C $(dir) $* \

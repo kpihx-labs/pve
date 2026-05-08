@@ -1,6 +1,6 @@
 # PVE Infrastructure Automation
 
-Central repository for Proxmox VE (PVE) automation tools in the KpihX-Labs ecosystem.
+Central repository for Proxmox VE automation modules in the KpihX-Labs ecosystem.
 
 ## Modules
 
@@ -8,7 +8,8 @@ Central repository for Proxmox VE (PVE) automation tools in the KpihX-Labs ecosy
 
 ## Quick Start
 
-You can run targets globally from this root using the `<module>_<target>` pattern, or use the shortcuts below.
+Use the root `Makefile` to dispatch into module `Makefile`s with the
+`<module>_<target>` pattern.
 
 ### 🚀 Install Debian VM
 ```bash
@@ -25,8 +26,9 @@ make vm_debian_purge VMID=102
 | Target | Description |
 | :--- | :--- |
 | `make help` | Show all available global and sub-module targets |
-| `make status`| Show git status (short) |
+| `make status` | Show git status (short) |
 | `make push` | Push current branch to all remotes (GitHub/GitLab) |
+| `make sync M="..."` | Add, commit, and push the whole repository |
 
 ---
-*For detailed configuration options, see the [vm_debian/README.md](vm_debian/README.md).*
+For module-specific behavior and variables, read the module README directly.

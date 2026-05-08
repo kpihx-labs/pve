@@ -1,59 +1,37 @@
 # PVE Module: Debian VM
 
-Automation tools for deploying and managing Debian Cloud-Init VMs on Proxmox VE.
+Provision and purge Debian Cloud-Init VMs on Proxmox VE.
 
-## 🚀 Key Features
+## Features
 
-- **Smart Identity Injection**: Dynamically detects the initiating user via `SUDO_USER` to merge their personal SSH keys with the hypervisor's root keys.
-- **Forced Network Layer**: Implements a dedicated `vendor-data` snippet to guarantee network interface activation on the first boot, bypassing common Cloud-Init V1 parsing failures.
-- **Deep Purge Invariant**: A specialized utility that ensures zero configuration drift by forcefully removing VMs, recursive ZFS datasets, and orphaned snippets.
+- **Environment-driven**: every deployment parameter can be overridden from the shell.
+- **Prompt-safe password flow**: `CIPASSWORD` is prompted only when not supplied.
+- **Deterministic first boot**: the installer renders both `ifupdown` and `systemd-networkd` static network files, then pins the first nameserver inside the Proxmox Cloud-Init layer.
+- **Host-aware DNS default**: when `DNS` is omitted, the installer reuses the current PVE host nameservers from `/etc/resolv.conf`.
+- **Deep purge**: VM config, ZFS leftovers, and Cloud-Init snippets are removed together.
 
-## ## Usage
+## Usage
 
-### 🚀 Install a VM
-Run `make install` from this directory.
+### Local module targets
 
-#### Basic Example
 ```bash
-make install VMID=102 STATIC_IP=10.10.10.102
+make help
+make install
+make purge
 ```
 
-#### Full Customization Example
+### Root repository dispatch
+
+Use the root `PVE/Makefile` when you want module dispatch or repo-wide sync:
+
 ```bash
-make install \
-  VMID=200 \
-  VMNAME=fluid-pve-debian \
-  STORAGE=local-zfs \
-  CORES=8 \
-  MEMORY_MIB=16384 \
-  ROOT_GIB=300 \
-  STATIC_IP=10.10.10.200 \
-  GATEWAY=10.10.10.1 \
-  DNS=1.1.1.1,1.0.0.1
+make vm_debian_install VMID=102 STATIC_IP=10.10.10.102
+make vm_debian_purge VMID=102
 ```
 
-### 🧹 Purge a VM
-Clean up everything related to a VMID to restore a pristine state.
+### Remote execution from the PVE host
 
-#### Remote Purge (One-Liner):
-```bash
-sudo bash -c "$(curl -sSL https://raw.githubusercontent.com/kpihx-labs/pve/master/vm_debian/scripts/purge.sh)"
-```
-
-#### Local Purge:
-```bash
-# Interactive mode
-sudo ./purge.sh
-
-# Automated mode
-sudo ./purge.sh -y 101
-```
-
-### 🌐 Remote Execution (One-Liner)
-Ideal for bootstrapping new PVE nodes without cloning the entire repository. This method ensures you have the latest version of the scripts directly from the source.
-
-> [!IMPORTANT]
-> Use `sudo bash -c "$(curl ...)"` to ensure environment variables are correctly passed to the sub-shell and that the script has the necessary privileges to execute `qm` commands.
+This module is designed to be consumed directly from the repository source:
 
 ```bash
 sudo VMID=110 \
@@ -69,66 +47,47 @@ sudo VMID=110 \
   bash -c "$(curl -sSL https://raw.githubusercontent.com/kpihx-labs/pve/master/vm_debian/scripts/install.sh)"
 ```
 
-## ## Configurable Options
+### Purge one-liner
+
+```bash
+sudo bash -c "$(curl -sSL https://raw.githubusercontent.com/kpihx-labs/pve/master/vm_debian/scripts/purge.sh)"
+```
+
+## Main variables
 
 | Variable | Description | Default |
 | :--- | :--- | :--- |
-| `VMID` | Unique Proxmox VM ID | `101` |
-| `VMNAME` | Display name in Proxmox UI | `fluid-pve-debian` |
-| `STORAGE` | Proxmox storage pool ID | `local-lvm` |
-| `IMAGE` | Path to the Debian Cloud-Init qcow2 image | `/var/lib/vz/template/iso/debian-12-generic...` |
-| `CORES` | Number of CPU cores | `4` |
-| `SOCKETS` | Number of CPU sockets | `1` |
-| `MEMORY_MIB` | RAM allocation in MiB | `8192` |
-| `ROOT_GIB` | Disk size in GiB | `300` |
-| `BRIDGE` | Network bridge on host | `vmbr1` |
-| `STATIC_IP` | Static IP for the VM | `10.10.10.101` |
-| `PREFIX` | Network mask prefix | `24` |
-| `GATEWAY` | Default gateway IP | `10.10.10.1` |
-| `DNS` | DNS servers (comma-separated) | `1.1.1.1,8.8.8.8` |
+| `VMID` | Proxmox VM identifier | `101` |
+| `VMNAME` | Label shown in the Proxmox UI | `homelab` |
+| `STORAGE` | Proxmox storage target | `local-zfs` |
+| `IMAGE` | Local qcow2 path on the PVE host | `/var/lib/vz/template/iso/debian-12-genericcloud-amd64.qcow2` |
+| `SOCKETS` | CPU sockets | `1` |
+| `CORES` | CPU cores per socket | `2` |
+| `MEMORY_MIB` | RAM size in MiB | `8192` |
+| `ROOT_GIB` | Root disk size in GiB | `300` |
+| `BRIDGE` | Proxmox bridge carrying the target subnet | `vmbr1` |
+| `CI_USER` | Cloud-Init login user | invoking sudo user |
+| `CIPASSWORD` | Password for `CI_USER` | prompted if empty |
+| `STATIC_IP` | Guest static IPv4 address | `10.10.10.101` |
+| `PREFIX` | CIDR prefix length | `24` |
+| `GATEWAY` | Default gateway | `10.10.10.1` |
+| `DNS` | Comma-separated DNS servers | PVE host `/etc/resolv.conf` or `1.1.1.1,8.8.8.8` |
 | `SEARCHDOMAIN` | DNS search domain | `kpihxlabs.com` |
-| `CI_USER` | Cloud-Init username | `kpihx` |
-| `SSH_KEYS_FILE` | Path to public keys on host | `~/.ssh/authorized_keys` |
-| `CIPASSWORD` | Password for CI_USER | *(Prompted if empty)* |
+| `NET_DEVICE_PATTERN` | Guest NIC match pattern for first-boot network forcing | `e*` |
+| `SNIPPET_PREFIX` | Prefix for generated Cloud-Init snippets | `fluid` |
 
-> [!IMPORTANT]
-> **Network Alignment**: Ensure the `BRIDGE` selected on the host matches the subnet defined by `STATIC_IP`, `PREFIX`, and `GATEWAY`.
+## Notes
 
-## 🔑 Post-Installation: Access & Operations
+- Proxmox `qm set --nameserver` is fed with only the first DNS entry because its Cloud-Init integration expects a single address there.
+- The richer DNS list still exists inside the generated guest files.
+- `purge.sh` removes both current and legacy snippet names to keep old hosts clean.
 
-### 1. SSH Access (Public Key Only)
-By default, password login is disabled if no `CIPASSWORD` was provided. You must use a matching private key.
+## Serial console
 
-**From your workspace:**
-```bash
-ssh <CI_USER>@<STATIC_IP>
-```
-
-**If you get `Permission denied (publickey)`:**
-Ensure your initiating host (PVE) has an SSH identity. If not, generate one:
-`ssh-keygen -t ed25519` and redeploy.
-
-### 2. Emergency / Debug Access (Serial Console)
-If the network is unreachable or SSH fails, use the Proxmox serial terminal:
+Use the serial console when SSH is not available yet:
 
 ```bash
 sudo qm terminal <VMID>
-# Use Ctrl+O to exit the terminal
 ```
 
-### 3. Monitoring
-Check the status and configuration from the PVE host:
-```bash
-sudo qm status <VMID>
-sudo qm config <VMID>
-```
-
-## 🏗️ Architecture
-
-1.  **Fabric Identification**: The script anchors the VM identity based on the PVE host's `SUDO_USER`.
-2.  **Storage Agnosticism**: Compatible with `local-zfs` and `local-lvm` backends with automatic ZFS orphan detection.
-3.  **Networking**: Defaults to `vmbr1` for lab isolation, using VirtIO for maximum throughput.
-
----
-**KπX — Global Agent Kernel Compliance**
-*Exploration: Problem First → Why before How → Visualization*
+Leave the console with `Ctrl+O`.

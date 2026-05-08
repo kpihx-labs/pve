@@ -1,251 +1,355 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# PROMOX DEBIAN VM LIFECYCLE AUTOMATION
+# PROXMOX DEBIAN VM LIFECYCLE AUTOMATION
 # ==============================================================================
-# Non-interactive, hardened deployment for Debian-based VMs on Proxmox.
-# Problem First -> Why before How -> Visualization.
-# Architecture: 0 Trust · 100% Control | 0 Magic · 100% Transparency
+# Non-interactive Debian VM provisioning for Proxmox VE.
+# The script keeps the module flexible through environment overrides while
+# keeping the first-boot network path deterministic.
 # ==============================================================================
 
 set -euo pipefail
+# Enable shell tracing only when explicitly requested by the caller.
 [ "${DEBUG:-}" = "1" ] && set -x
 
+# The installer is designed around Proxmox CLI calls and snippet writes.
+# Running unprivileged would fail late and opaquely, so we stop immediately.
 if [[ $EUID -ne 0 ]]; then
   echo "Error: This script must be run as root (use sudo)."
   exit 1
 fi
 
-# --- Smart User Detection ---
-# Identify the original user who invoked sudo to correctly locate SSH keys and HOME.
+# --- Runtime context -----------------------------------------------------------
+# The invoking user is used for defaults and SSH key discovery.
 REAL_USER="${SUDO_USER:-$(whoami)}"
-REAL_HOME=$(getent passwd "${REAL_USER}" | cut -d: -f6)
-echo "--- Running as root for user ${REAL_USER} (Home: ${REAL_HOME}) ---"
+REAL_HOME="$(getent passwd "${REAL_USER}" | cut -d: -f6)"
 
-# --- identity / sizing ---
-# VMID: free integer (see `qm list`). Change if occupied.
+# --- Constants / defaults ------------------------------------------------------
+# Every value is overrideable from the environment.
+# The goal is to keep the module reusable across nodes and networks without
+# editing the file itself for every deployment.
 VMID="${VMID:-101}"
-
-# VMNAME: label in Proxmox UI only (Fluid keys off Fabric host id, not this string).
 VMNAME="${VMNAME:-homelab}"
-
-# STORAGE: exact pool id from Datacenter -> Storage (`pvesm status -v 01`). Examples: local-lvm, local-zfs.
 STORAGE="${STORAGE:-local-zfs}"
-
-# IMAGE: qcow path on THIS node — replace with wherever you staged Generic Cloud amd64.
 IMAGE="${IMAGE:-/var/lib/vz/template/iso/debian-12-genericcloud-amd64.qcow2}"
-
-# CPU/RAM — single consolidated Debian+Docker VM sizing.
-# SOCKETS x CORES = total vcpus for the guest.
 SOCKETS="${SOCKETS:-1}"
 CORES="${CORES:-2}"
 MEMORY_MIB="${MEMORY_MIB:-8192}"
-
-# BRIDGE — must be the vmbr carrying the SAME L2 subnet as STATIC_IP/PREFIX/GW below.
-# Typical homelab patterns: vmbr1 = LAB / tagged VLAN trunk; vmbr0 = bridged NIC or single flat network.
 BRIDGE="${BRIDGE:-vmbr1}"
-
-# Root disk GiB — cloud image arrives small; enlarge before heavy Docker use.
 ROOT_GIB="${ROOT_GIB:-300}"
-
-# First login user keys — file on HYPERVISOR with public SSH keys (cloud-init pipes into ~/.ssh/authorized_keys).
 CI_USER="${CI_USER:-${REAL_USER}}"
-
-# Password Handling
-if [ -z "${CIPASSWORD:-}" ]; then
-  echo "No CIPASSWORD provided in environment."
-  while true; do
-    read -rs -p "Enter password for user ${CI_USER} (leave blank to disable password login): " PASS1
-    echo
-    if [ -z "$PASS1" ]; then
-      CIPASSWORD=""
-      break
-    fi
-    read -rs -p "Confirm password: " PASS2
-    echo
-    if [ "$PASS1" == "$PASS2" ]; then
-      CIPASSWORD="$PASS1"
-      break
-    else
-      echo "Error: Passwords do not match. Please try again."
-    fi
-  done
-fi
-
-# SSH Keys: We merge root and the initiating user's authorized_keys for maximum flexibility.
-# This ensures that both the PVE host (root) and the user's workspace (via their key) can access the VM.
-SSH_KEYS_FILES=("/root/.ssh/authorized_keys" "${REAL_HOME}/.ssh/authorized_keys")
-
-# Static IP config
-# Replace placeholders with YOUR addressing.
+CIPASSWORD="${CIPASSWORD:-}"
 STATIC_IP="${STATIC_IP:-10.10.10.101}"
 PREFIX="${PREFIX:-24}"
 GATEWAY="${GATEWAY:-10.10.10.1}"
-DNS="${DNS:-1.1.1.1,8.8.8.8}"
+DNS="${DNS:-}"
 SEARCHDOMAIN="${SEARCHDOMAIN:-kpihxlabs.com}"
+NET_DEVICE_PATTERN="${NET_DEVICE_PATTERN:-e*}"
+SNIPPET_DIR="${SNIPPET_DIR:-/var/lib/vz/snippets}"
+SNIPPET_PREFIX="${SNIPPET_PREFIX:-fluid}"
+USER_SNIPPET_FILE="${SNIPPET_PREFIX}-user-${VMID}.yml"
+META_SNIPPET_FILE="${SNIPPET_PREFIX}-meta-${VMID}.yml"
+SSH_KEYS_FILES=("/root/.ssh/authorized_keys" "${REAL_HOME}/.ssh/authorized_keys")
 
-# --- Deep Purge ---
-# Blow away previous VM same id — ensure no orphaned locks or datasets remain.
-echo "--- Deep purging VM ${VMID} ---"
-qm stop "${VMID}" 2>/dev/null || true
-qm destroy "${VMID}" --purge true 2>/dev/null || true
+# Convert a CIDR prefix into a dotted decimal netmask because
+# `/etc/network/interfaces` still expects the legacy netmask representation.
+prefix_to_netmask() {
+  local prefix=$1
+  local mask=""
+  local octet
+  local full_octets=$((prefix / 8))
+  local partial_bits=$((prefix % 8))
 
-# Explicitly check for orphan ZFS datasets if on a ZFS-backed pool.
-if command -v zfs >/dev/null; then
-  echo "Checking for orphan ZFS datasets..."
-  zfs list -H -o name 2>/dev/null | grep "vm-${VMID}-" | xargs -n1 zfs destroy -r 2>/dev/null || true
-fi
+  for octet in 1 2 3 4; do
+    if (( octet <= full_octets )); then
+      mask+="${mask:+.}255"
+    elif (( octet == full_octets + 1 && partial_bits > 0 )); then
+      mask+="${mask:+.}$((256 - 2 ** (8 - partial_bits)))"
+    else
+      mask+="${mask:+.}0"
+    fi
+  done
 
-# --- Installation ---
-# Skeleton VM profile: QEMU guest agent (shutdown cooperation), virtio-SCSI plumbing.
-echo "--- Creating VM ${VMID} ---"
-qm create "${VMID}" \
-  --name "${VMNAME}" \
-  --agent enabled=1 \
-  --scsihw virtio-scsi-pci \
-  --boot order=scsi0 \
-  --ostype l26 \
-  --machine pc \
-  --cores "${CORES}" \
-  --sockets "${SOCKETS}" \
-  --memory "${MEMORY_MIB}" \
-  --vga serial0 \
-  --serial0 socket \
-  --net0 e1000,bridge="${BRIDGE}"
+  printf '%s\n' "${mask}"
+}
 
-# Inject Generic Cloud qcow -> storage pool creates `vm-${VMID}-disk-0` by default.
-echo "--- Importing disk ---"
-qm importdisk "${VMID}" "${IMAGE}" "${STORAGE}"
-
-# Attach root disk virtio-SCSI (+ iothread + discard/TRIM hints for thin backends).
-qm set "${VMID}" --scsi0 "${STORAGE}:vm-${VMID}-disk-0,iothread=1,discard=on"
-
-# Grow block device BEFORE heavy first-boot usage (guest FS may auto-grow via cloud-init).
-qm resize "${VMID}" scsi0 "${ROOT_GIB}G"
-
-# --- Cloud-Init Configuration ---
-echo "--- Configuring Cloud-Init ---"
-qm set "${VMID}" --ide2 "${STORAGE}:cloudinit"
-qm set "${VMID}" --ciuser "${CI_USER}"
-
-# Merge SSH keys from both sources into a clean, unique file for injection.
-TMP_KEYS=$(mktemp)
-for keyfile in "${SSH_KEYS_FILES[@]}"; do
-  if [ -f "${keyfile}" ]; then
-    cat "${keyfile}" >> "${TMP_KEYS}"
+prompt_password_if_needed() {
+  # If the caller already provided a password, preserve it exactly.
+  if [ -n "${CIPASSWORD}" ]; then
+    return
   fi
-done
-sort -u "${TMP_KEYS}" -o "${TMP_KEYS}"
-sed -i '/^$/d' "${TMP_KEYS}"
 
-qm set "${VMID}" --sshkeys "${TMP_KEYS}"
+  # Interactive prompting is only a fallback for local operator usage.
+  # Remote curl flows can still inject `CIPASSWORD` from the environment.
+  echo "No CIPASSWORD provided in environment."
+  while true; do
+    local pass1=""
+    local pass2=""
+    read -rs -p "Enter password for user ${CI_USER} (leave blank to disable password login): " pass1
+    echo
+    if [ -z "${pass1}" ]; then
+      CIPASSWORD=""
+      return
+    fi
+    read -rs -p "Confirm password: " pass2
+    echo
+    if [ "${pass1}" = "${pass2}" ]; then
+      CIPASSWORD="${pass1}"
+      return
+    fi
+    echo "Error: Passwords do not match. Please try again."
+  done
+}
 
-# Network and Password settings
-qm set "${VMID}" --ipconfig0 "ip=${STATIC_IP}/${PREFIX},gw=${GATEWAY}"
-qm set "${VMID}" --nameserver "${DNS}"
-[ -n "${SEARCHDOMAIN}" ] && qm set "${VMID}" --searchdomain "${SEARCHDOMAIN}"
-[ -n "${CIPASSWORD}" ] && qm set "${VMID}" --cipassword "${CIPASSWORD}"
+detect_dns_if_needed() {
+  # Preserve explicitly requested DNS settings.
+  if [ -n "${DNS}" ]; then
+    return
+  fi
 
-# --- CLOUD-INIT SNIPPETS (Multi-Layer) ---
-SNIPPET_DIR="/var/lib/vz/snippets"
-mkdir -p "${SNIPPET_DIR}"
-USER_SNIPPET_FILE="fluid-user-${VMID}.yml"
-META_SNIPPET_FILE="fluid-meta-${VMID}.yml"
+  # Reusing the host resolvers is safer than hardcoding public DNS when the
+  # Proxmox node lives behind a site-specific network policy.
+  DNS="$(awk '/^nameserver[[:space:]]+/ {print $2}' /etc/resolv.conf | paste -sd, -)"
+  DNS="${DNS:-1.1.1.1,8.8.8.8}"
+}
 
-# 1. Meta-Data Snippet (Dynamic ID to force re-run)
-cat << EOF > "${SNIPPET_DIR}/${META_SNIPPET_FILE}"
+build_dns_derived_values() {
+  # Proxmox Cloud-Init integration accepts only one nameserver in `qm set`,
+  # while the guest files can carry the full resolver list.
+  PRIMARY_DNS="$(printf '%s' "${DNS}" | awk -F',' '{gsub(/^[[:space:]]+|[[:space:]]+$/, "", $1); print $1}')"
+  # `interfaces` wants a space-separated resolver list.
+  DNS_INTERFACES="$(printf '%s' "${DNS}" | awk -F',' '{for (i = 1; i <= NF; ++i) {gsub(/^[[:space:]]+|[[:space:]]+$/, "", $i); printf "%s%s", (i == 1 ? "" : " "), $i}}')"
+  # `systemd-networkd` wants one DNS= line per resolver.
+  DNS_SYSTEMD_LINES="$(printf '%s' "${DNS}" | awk -F',' '{for (i = 1; i <= NF; ++i) {gsub(/^[[:space:]]+|[[:space:]]+$/, "", $i); printf "      DNS=%s\n", $i}}')"
+  # `resolv.conf` wants one `nameserver` entry per resolver.
+  DNS_RESOLV_LINES="$(printf '%s' "${DNS}" | awk -F',' '{for (i = 1; i <= NF; ++i) {gsub(/^[[:space:]]+|[[:space:]]+$/, "", $i); printf "      nameserver %s\n", $i}}')"
+  NETMASK="$(prefix_to_netmask "${PREFIX}")"
+}
+
+validate_inputs() {
+  # Fail before mutating the host if the qcow image is missing.
+  if [ ! -f "${IMAGE}" ]; then
+    echo "Error: image not found: ${IMAGE}"
+    exit 1
+  fi
+
+  # VMID must stay numeric because Proxmox CLI subcommands treat it as an ID.
+  if [[ ! "${VMID}" =~ ^[0-9]+$ ]]; then
+    echo "Error: VMID must be numeric."
+    exit 1
+  fi
+}
+
+build_ssh_key_bundle() {
+  # Build a single, deduplicated key file for `qm set --sshkeys`.
+  # This lets the hypervisor root account and the invoking user both retain
+  # a path into the guest when keys are available.
+  TMP_KEYS=$(mktemp)
+  for keyfile in "${SSH_KEYS_FILES[@]}"; do
+    if [ -f "${keyfile}" ]; then
+      cat "${keyfile}" >> "${TMP_KEYS}"
+    fi
+  done
+  sort -u "${TMP_KEYS}" -o "${TMP_KEYS}"
+  sed -i '/^$/d' "${TMP_KEYS}"
+}
+
+render_meta_snippet() {
+  # A changing instance-id forces Cloud-Init to treat the VM as a fresh
+  # instance after every destructive rebuild.
+  mkdir -p "${SNIPPET_DIR}"
+  cat <<EOF > "${SNIPPET_DIR}/${META_SNIPPET_FILE}"
 instance-id: fluid-vm-${VMID}-$(date +%s)
 local-hostname: ${VMNAME}
 EOF
+}
 
-# Password Hashing (Host-side)
-PASS_HASH=$(echo "${CIPASSWORD}" | openssl passwd -6 -stdin)
-CI_KEYS=$(cat "${TMP_KEYS}")
+render_user_snippet() {
+  # Cloud-Init accepts either a locked password or a pre-hashed password.
+  # Compute the exact variant before templating the YAML.
+  local lock_passwd="true"
+  local password_block=""
 
-# 2. User-Data Snippet (Hardening only)
-cat << EOF > "${SNIPPET_DIR}/${USER_SNIPPET_FILE}"
+  if [ -n "${CIPASSWORD}" ]; then
+    lock_passwd="false"
+    password_block="    password: $(echo "${CIPASSWORD}" | openssl passwd -6 -stdin)"
+  fi
+
+  cat <<EOF > "${SNIPPET_DIR}/${USER_SNIPPET_FILE}"
 #cloud-config
+# Set the visible host identity inside the guest.
+hostname: ${VMNAME}
+fqdn: ${VMNAME}.${SEARCHDOMAIN}
+
+# Allow password SSH only when a password is intentionally configured.
 ssh_pwauth: true
+
+# Create the primary operator account.
 users:
-  - name: kpihx
+  - name: ${CI_USER}
     groups: sudo
     shell: /bin/bash
     sudo: ['ALL=(ALL) NOPASSWD:ALL']
-    lock_passwd: false
-    password: ${PASS_HASH}
-    ssh_authorized_keys:
-      - ${CI_KEYS}
+    lock_passwd: ${lock_passwd}
+${password_block}
+
+# Materialize the network files directly in the guest filesystem.
 write_files:
   - path: /etc/network/interfaces
+    permissions: '0644'
     content: |
+      # Legacy ifupdown view kept for compatibility with images or tools
+      # that still read /etc/network/interfaces during first boot.
       auto lo
       iface lo inet loopback
+
       auto eth0
       iface eth0 inet static
         address ${STATIC_IP}
-        netmask 255.255.255.0
+        netmask ${NETMASK}
         gateway ${GATEWAY}
-        dns-nameservers ${DNS%%,*}
+        dns-nameservers ${DNS_INTERFACES}
   - path: /etc/systemd/network/20-wired.network
+    permissions: '0644'
     content: |
+      # systemd-networkd view kept because Debian cloud images lean on it.
       [Match]
-      Name=e*
+      Name=${NET_DEVICE_PATTERN}
+
       [Network]
       Address=${STATIC_IP}/${PREFIX}
       Gateway=${GATEWAY}
-      DNS=${DNS%%,*}
-      DHCP=no
-  - path: /etc/systemd/system/debug-net.service
-    content: |
-      [Unit]
-      Description=Debug Networking to Console
-      After=network.target
-      [Service]
-      Type=oneshot
-      ExecStart=/usr/bin/sh -c "echo '--- NETWORK DEBUG ---' > /dev/console; ip addr > /dev/console; echo '--- END DEBUG ---' > /dev/console"
-      StandardOutput=journal+console
-      [Install]
-      WantedBy=multi-user.target
+${DNS_SYSTEMD_LINES}      DHCP=no
+
+# bootcmd runs early, before the late customization phase.
+# Use it to keep the interface up and avoid DNS/wait-online surprises.
 bootcmd:
-  - "echo 'root:pass123' | chpasswd"
-  - "echo 'kpihx:pass123' | chpasswd"
-  - "ip link set e* up || true"
+  - "ip link set ${NET_DEVICE_PATTERN} up || true"
   - systemctl mask systemd-resolved
   - systemctl mask systemd-networkd-wait-online
   - rm -f /etc/resolv.conf
-  - printf "nameserver ${DNS%%,*}\n" > /etc/resolv.conf
-  - systemctl restart systemd-networkd || true
+  - |
+$(printf '%s\n' "${DNS_RESOLV_LINES}")$(printf '      search %s\n' "${SEARCHDOMAIN}")
+
+# Keep first boot self-sufficient: the guest must be reachable and manageable.
 package_update: true
 packages:
   - qemu-guest-agent
+  - openssh-server
+
+# runcmd runs later, once packages and most Cloud-Init stages have executed.
+# Use it to reassert the network state and ensure the guest agent is alive.
 runcmd:
-  - "echo '--- NETWORK DEBUG ---' > /dev/ttyS0"
-  - "ip addr > /dev/ttyS0"
-  - "echo 'root:pass123' | chpasswd"
-  - "echo 'kpihx:pass123' | chpasswd"
-  - "echo 'debian:pass123' | chpasswd"
   - "export IFACE=\$(ip -o link show | awk -F': ' '{print \$2}' | grep -v lo | head -n1 | cut -d'@' -f1)"
-  - "ip addr add 10.10.10.101/24 dev \$IFACE || true"
+  - "ip addr add ${STATIC_IP}/${PREFIX} dev \$IFACE || true"
   - "ip link set \$IFACE up || true"
-  - "ip route add default via 10.10.10.1 || true"
-  - "ip addr > /dev/ttyS0"
-  - "echo '--- END DEBUG ---' > /dev/ttyS0"
+  - "ip route replace default via ${GATEWAY} || true"
   - rm -f /etc/resolv.conf
-  - printf "nameserver ${DNS%%,*}\n" > /etc/resolv.conf
+  - |
+$(printf '%s\n' "${DNS_RESOLV_LINES}")$(printf '      search %s\n' "${SEARCHDOMAIN}")
   - "systemctl stop systemd-resolved || true"
   - "systemctl disable systemd-resolved || true"
   - "systemctl start qemu-guest-agent || true"
 EOF
+}
 
-qm set "${VMID}" --cicustom "user=local:snippets/${USER_SNIPPET_FILE},meta=local:snippets/${META_SNIPPET_FILE}"
+deep_purge_existing_vm() {
+  # Rebuilds must start from a clean hypervisor state to avoid phantom disks,
+  # stale Cloud-Init state, and mis-leading Proxmox inventory leftovers.
+  echo "--- Deep purging VM ${VMID} ---"
+  qm stop "${VMID}" 2>/dev/null || true
+  qm destroy "${VMID}" --purge true 2>/dev/null || true
 
-rm -f "${TMP_KEYS}"
+  if command -v zfs >/dev/null 2>&1; then
+    echo "Checking for orphan ZFS datasets..."
+    # Proxmox can leave ZFS datasets behind when a destroy was interrupted.
+    zfs list -H -o name 2>/dev/null | grep "vm-${VMID}-" | xargs -r -n1 zfs destroy -r 2>/dev/null || true
+  fi
+}
 
-# Security and Acceleration extras.
-qm set "${VMID}" --tpmstate0 "${STORAGE}:4,version=v2.0"
-qm set "${VMID}" --rng0 source=/dev/urandom
+create_vm_shell() {
+  # This creates only the Proxmox shell around the future guest.
+  # The OS content itself arrives later through the imported cloud image.
+  echo "--- Creating VM ${VMID} ---"
+  qm create "${VMID}" \
+    --name "${VMNAME}" \
+    --agent enabled=1 \
+    --scsihw virtio-scsi-pci \
+    --boot order=scsi0 \
+    --ostype l26 \
+    --machine pc \
+    --cores "${CORES}" \
+    --sockets "${SOCKETS}" \
+    --memory "${MEMORY_MIB}" \
+    --vga serial0 \
+    --serial0 socket \
+    --net0 e1000,bridge="${BRIDGE}"
+}
 
-# --- Launch ---
-# Attach serial from UI / `qm terminal` if SSH unreachable.
-echo "--- Launching VM ${VMID} ---"
-qm start "${VMID}"
-echo "--- SUCCESS: VM ${VMID} is booting with Forced Network and Dynamic keys ---"
+import_and_resize_disk() {
+  # Import the cloud image into the target storage pool, then grow it to the
+  # final requested size before first boot.
+  echo "--- Importing disk ---"
+  qm importdisk "${VMID}" "${IMAGE}" "${STORAGE}"
+  qm set "${VMID}" --scsi0 "${STORAGE}:vm-${VMID}-disk-0,iothread=1,discard=on"
+  qm resize "${VMID}" scsi0 "${ROOT_GIB}G"
+}
+
+apply_cloud_init_settings() {
+  # Bind the Cloud-Init drive and inject the first-boot network parameters
+  # that Proxmox itself knows how to expose to the guest.
+  echo "--- Configuring Cloud-Init ---"
+  qm set "${VMID}" --ide2 "${STORAGE}:cloudinit"
+  qm set "${VMID}" --ciuser "${CI_USER}"
+  qm set "${VMID}" --ipconfig0 "ip=${STATIC_IP}/${PREFIX},gw=${GATEWAY}"
+
+  # Proxmox Cloud-Init accepts a single nameserver string here; richer DNS
+  # handling is rendered inside the guest snippets below.
+  qm set "${VMID}" --nameserver "${PRIMARY_DNS}"
+  [ -n "${SEARCHDOMAIN}" ] && qm set "${VMID}" --searchdomain "${SEARCHDOMAIN}"
+  [ -n "${CIPASSWORD}" ] && qm set "${VMID}" --cipassword "${CIPASSWORD}"
+
+  if [ -s "${TMP_KEYS}" ]; then
+    # Only inject SSH keys when at least one real key exists.
+    qm set "${VMID}" --sshkeys "${TMP_KEYS}"
+  fi
+
+  # Attach the generated user-data and meta-data snippets.
+  qm set "${VMID}" --cicustom "user=local:snippets/${USER_SNIPPET_FILE},meta=local:snippets/${META_SNIPPET_FILE}"
+}
+
+launch_vm() {
+  # TPM and RNG are optional runtime helpers but cheap to wire in here.
+  qm set "${VMID}" --tpmstate0 "${STORAGE}:4,version=v2.0"
+  qm set "${VMID}" --rng0 source=/dev/urandom
+
+  echo "--- Launching VM ${VMID} ---"
+  qm start "${VMID}"
+  echo "--- SUCCESS: VM ${VMID} is booting with Forced Network and Dynamic keys ---"
+}
+
+cleanup_local_temp() {
+  # The bundle file contains SSH public keys only, but it is still transient
+  # installer state and should not remain on disk.
+  rm -f "${TMP_KEYS:-}"
+}
+
+main() {
+  # Surface the effective operator context before any mutation.
+  echo "--- Running as root for user ${REAL_USER} (Home: ${REAL_HOME}) ---"
+
+  prompt_password_if_needed
+  detect_dns_if_needed
+  build_dns_derived_values
+  validate_inputs
+  build_ssh_key_bundle
+  deep_purge_existing_vm
+  create_vm_shell
+  import_and_resize_disk
+  render_meta_snippet
+  render_user_snippet
+  apply_cloud_init_settings
+  launch_vm
+  cleanup_local_temp
+}
+
+main "$@"

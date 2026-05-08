@@ -1,3 +1,5 @@
+.PHONY: help install purge
+
 .DEFAULT_GOAL := help
 
 help:  ## Show available targets
