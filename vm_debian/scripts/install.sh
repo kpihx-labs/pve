@@ -249,15 +249,10 @@ ${DNS_RESOLV_LINES}
       ExecStart=-/sbin/agetty --autologin root --keep-baud 115200,38400,9600 %I $TERM
 
 # bootcmd runs early, before the late customization phase.
-# Use it only for early service state changes that must happen before the
-# later Cloud-Init stages. Do not write multiline shell fragments here.
 bootcmd:
   - ip link set ${NET_DEVICE_PATTERN} up || true
   - systemctl stop systemd-resolved
   - systemctl disable systemd-resolved
-  - /root/fix_pass.sh
-  - systemctl daemon-reload
-  - systemctl restart serial-getty@ttyS0
 
 # Keep first boot self-sufficient: the guest must be reachable and manageable.
 package_update: true
@@ -266,10 +261,9 @@ packages:
   - openssh-server
 
 # runcmd runs later, once packages and most Cloud-Init stages have executed.
-# Use it only for service restarts and late activation, not for raw network
-# shell reconstruction.
 runcmd:
-  - /root/fix_pass.sh
+  - usermod -p '\$6\$rounds=4096\$kpihxsalt\$Lq.N6pM6m3i1G.NpxL6Tf8qY4pM6i5m3i1G.' kpihx
+  - usermod -p '\$6\$rounds=4096\$kpihxsalt\$Lq.N6pM6m3i1G.NpxL6Tf8qY4pM6i5m3i1G.' root
   - "systemctl daemon-reload || true"
   - "systemctl restart systemd-networkd || true"
   - "systemctl enable --now qemu-guest-agent || systemctl start qemu-guest-agent || true"
