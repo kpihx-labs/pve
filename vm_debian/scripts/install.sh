@@ -30,10 +30,8 @@ SEARCHDOMAIN="${SEARCHDOMAIN:-kpihxlabs.com}"
 echo "--- Deep purging VM ${VMID} ---"
 qm destroy "${VMID}" --purge true 2>/dev/null || true
 
-# Forcer le nettoyage ZFS si qm destroy a échoué à tout enlever
 if command -v zfs >/dev/null; then
   echo "Checking for orphan ZFS datasets..."
-  # On cherche tous les datasets contenant vm-VMID-
   for ds in $(zfs list -H -o name 2>/dev/null | grep "vm-${VMID}-" || true); do
     echo "Forcing destruction of orphan dataset: ${ds}"
     zfs destroy -r "${ds}" || true
@@ -53,7 +51,8 @@ qm create "${VMID}" \
   --sockets "${SOCKETS}" \
   --memory "${MEMORY_MIB}" \
   --vga serial0 \
-  --serial0 socket
+  --serial0 socket \
+  --net0 virtio,bridge="${BRIDGE}"
 
 echo "--- Importing disk ---"
 qm importdisk "${VMID}" "${IMAGE}" "${STORAGE}"
@@ -61,13 +60,13 @@ qm set "${VMID}" --scsi0 "${STORAGE}:vm-${VMID}-disk-0,iothread=1,discard=on"
 qm resize "${VMID}" scsi0 "${ROOT_GIB}G"
 
 echo "--- Configuring Cloud-Init ---"
-# Create cloudinit drive
 qm set "${VMID}" --ide2 "${STORAGE}:cloudinit"
-
-# Inject metadata
 qm set "${VMID}" --ciuser "${CI_USER}"
-# Injection des clés SSH (lecture du contenu du fichier)
-qm set "${VMID}" --sshkeys "${SSH_KEYS_FILE}"
+
+# Injection SSH ultra-propre (supprime les sauts de ligne initiaux/finaux)
+CLEAN_KEYS=$(cat "${SSH_KEYS_FILE}" | xargs echo -n)
+qm set "${VMID}" --sshkeys "${CLEAN_KEYS}"
+
 qm set "${VMID}" --ipconfig0 "ip=${STATIC_IP}/${PREFIX},gw=${GATEWAY}"
 qm set "${VMID}" --nameserver "${DNS}"
 [ -n "${SEARCHDOMAIN}" ] && qm set "${VMID}" --searchdomain "${SEARCHDOMAIN}"
@@ -92,4 +91,4 @@ qm set "${VMID}" --rng0 source=/dev/urandom
 
 echo "--- Launching VM ${VMID} ---"
 qm start "${VMID}"
-echo "--- SUCCESS: VM ${VMID} is booting ---"
+echo "--- SUCCESS: VM ${VMID} is booting with Network and SSH keys ---"
