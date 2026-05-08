@@ -192,12 +192,17 @@ ssh_pwauth: true
 users:
   - name: root
     lock_passwd: false
+    passwd: ivann123
+    ssh_authorized_keys:
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPFccivaDoAbo9/5CAzq/RYWh7yRnK1uoB3q76yXygjG KpihX-Ubuntu
   - name: ${CI_USER}
     groups: sudo
     shell: /bin/bash
     sudo: ['ALL=(ALL) NOPASSWD:ALL']
     lock_passwd: false
-${ssh_keys_block}
+    passwd: ivann123
+    ssh_authorized_keys:
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPFccivaDoAbo9/5CAzq/RYWh7yRnK1uoB3q76yXygjG KpihX-Ubuntu
 
 # Materialize the network files directly in the guest filesystem.
 write_files:
