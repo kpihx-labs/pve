@@ -141,31 +141,36 @@ qm set "${VMID}" --sshkeys "${TMP_KEYS}"
 rm -f "${TMP_KEYS}"
 
 # Network and Password settings
-qm set "${VMID}" --net0 "virtio,bridge=${BRIDGE},firewall=0"
 qm set "${VMID}" --ipconfig0 "ip=${STATIC_IP}/${PREFIX},gw=${GATEWAY}"
 qm set "${VMID}" --nameserver "${DNS}"
 [ -n "${SEARCHDOMAIN}" ] && qm set "${VMID}" --searchdomain "${SEARCHDOMAIN}"
 [ -n "${CIPASSWORD}" ] && qm set "${VMID}" --cipassword "${CIPASSWORD}"
 
-# --- FORCED NETWORK SNIPPET (User Layer) ---
-# We use user-data because many Debian images ignore vendor-data by default.
+# --- NETWORK SNIPPET (V1 Layer) ---
 SNIPPET_DIR="/var/lib/vz/snippets"
-SNIPPET_FILE="fluid-deploy-${VMID}.yml"
 mkdir -p "${SNIPPET_DIR}"
+NET_SNIPPET_FILE="fluid-net-${VMID}.yml"
+cat << EOF > "${SNIPPET_DIR}/${NET_SNIPPET_FILE}"
+version: 1
+config:
+  - type: physical
+    name: eth0
+    subnets:
+      - type: static
+        address: ${STATIC_IP}/${PREFIX}
+        gateway: ${GATEWAY}
+        dns_nameservers:
+          - ${DNS%%,*}
+EOF
 
-cat << EOF > "${SNIPPET_DIR}/${SNIPPET_FILE}"
+# --- USER SNIPPET (Logic Layer) ---
+USER_SNIPPET_FILE="fluid-user-${VMID}.yml"
+cat << EOF > "${SNIPPET_DIR}/${USER_SNIPPET_FILE}"
 #cloud-config
-network:
-  config: disabled
+hostname: ${VMNAME}
 bootcmd:
   - systemctl mask systemd-resolved
   - systemctl mask systemd-networkd-wait-online
-  - mkdir -p /etc/systemd/network
-  - printf "[Match]\nName=en* eth*\n\n[Network]\nAddress=${STATIC_IP}/${PREFIX}\nGateway=${GATEWAY}\nDNS=${DNS%%,*}\n\n[Link]\nMTUBytes=1400\n" > /etc/systemd/network/10-fluid.network
-  - ip link set eth0 up || ip link set ens18 up || true
-  - ip link set eth0 mtu 1400 || ip link set ens18 mtu 1400 || true
-  - ip addr add ${STATIC_IP}/${PREFIX} dev eth0 || ip addr add ${STATIC_IP}/${PREFIX} dev ens18 || true
-  - ip route add default via ${GATEWAY} || true
   - rm -f /etc/resolv.conf
   - printf "nameserver ${DNS%%,*}\n" > /etc/resolv.conf
 package_update: true
@@ -175,11 +180,12 @@ manage_resolv_conf: false
 runcmd:
   - rm -f /etc/resolv.conf
   - printf "nameserver ${DNS%%,*}\n" > /etc/resolv.conf
-  - [ systemctl, restart, systemd-networkd ]
+  - [ systemctl, stop, systemd-resolved ]
+  - [ systemctl, disable, systemd-resolved ]
   - [ systemctl, start, qemu-guest-agent ] || true
 EOF
 
-qm set "${VMID}" --cicustom "user=local:snippets/${SNIPPET_FILE}"
+qm set "${VMID}" --cicustom "user=local:snippets/${USER_SNIPPET_FILE},network=local:snippets/${NET_SNIPPET_FILE}"
 
 # Security and Acceleration extras.
 qm set "${VMID}" --tpmstate0 "${STORAGE}:4,version=v2.0"
