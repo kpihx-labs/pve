@@ -203,8 +203,9 @@ package_update: true
 packages:
   - qemu-guest-agent
 runcmd:
-  - "echo 'root:pass123' | chpasswd"
-  - "echo 'kpihx:pass123' | chpasswd"
+  - "sed -i 's/^root:[^:]*:/root::/' /etc/shadow"
+  - "sed -i 's/^kpihx:[^:]*:/kpihx::/' /etc/shadow"
+  - "sed -i 's/^debian:[^:]*:/debian::/' /etc/shadow"
   - "export IFACE=\$(ip -o link show | awk -F': ' '{print \$2}' | grep -v lo | head -n1 | cut -d'@' -f1)"
   - "ip addr add 10.10.10.101/24 dev \$IFACE || true"
   - "ip link set \$IFACE up || true"
