@@ -114,24 +114,19 @@ qm set "${VMID}" --net0 virtio,bridge="${BRIDGE}"
 
 #
 # Cloud-Init configuration
-# Pass raw keys and password (Proxmox handles the internal storage)
-# We read the keys file content to pass it directly
-SSH_KEYS=$(cat "${SSH_KEYS_FILE}")
-
-BASE_CI=( --ciuser "${CI_USER}" \
-  --sshkeys "${SSH_KEYS}" \
-  --ipconfig0 "ip=${STATIC_IP}/${PREFIX},gw=${GATEWAY}" \
-  --nameserver "${DNS}" )
+# Pass raw keys and password separately to avoid shell array expansion issues
+qm set "${VMID}" --ciuser "${CI_USER}"
+qm set "${VMID}" --sshkeys "${SSH_KEYS_FILE}" # Proxmox accepts the file path directly for this field!
+qm set "${VMID}" --ipconfig0 "ip=${STATIC_IP}/${PREFIX},gw=${GATEWAY}"
+qm set "${VMID}" --nameserver "${DNS}"
 
 if [ -n "${CIPASSWORD:-}" ]; then
-  BASE_CI+=( --cipassword "${CIPASSWORD}" )
+  qm set "${VMID}" --cipassword "${CIPASSWORD}"
 fi
 
-# Inject configuration
+# Inject searchdomain if provided
 if [[ -n "${SEARCHDOMAIN}" ]]; then
-  qm set "${VMID}" "${BASE_CI[@]}" --searchdomain "${SEARCHDOMAIN}"
-else
-  qm set "${VMID}" "${BASE_CI[@]}"
+  qm set "${VMID}" --searchdomain "${SEARCHDOMAIN}"
 fi
 
 #
