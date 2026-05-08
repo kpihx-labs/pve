@@ -82,7 +82,7 @@ qm resize "${VMID}" scsi0 "${ROOT_GIB}G"
 
 #
 # UEFI nvram shim — omit flag + switch firmware fields only if consciously moving to BIOS/legacy workflow (normally keep for Debian cloud).
-qm set "${VMID}" --efidisk0 "${STORAGE}:4m,format=raw,pre-enrolled-keys=1"
+qm set "${VMID}" --efidisk0 "${STORAGE}:1,pre-enrolled-keys=1"
 
 #
 # vTPM (optional extras). Uncomment ONLY if workloads need TPM-state or image complains —
