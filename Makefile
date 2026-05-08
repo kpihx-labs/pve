@@ -31,9 +31,7 @@ sync: ## Add all, commit and push (usage: make sync -m "message")
 	@git commit -m "$(if $(filter-out sync -m,$(MAKECMDGOALS)),$(filter-out sync -m,$(MAKECMDGOALS)),sync: auto-commit from Makefile)"
 	@$(MAKE) push
 
-# Support for -m flag and positional arguments
--m:
-	@:
+# Catch-all to ignore positional arguments (like -m or the message)
 %:
 	@:
 
