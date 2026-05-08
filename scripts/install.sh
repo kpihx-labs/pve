@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+set -eu
+
+# --- identity / sizing ---
+# VMID: free integer (see `qm list`). Change if occupied.
+VMID="${VMID:-101}"
+
+# VMNAME: label in Proxmox UI only (Fluid keys off Fabric host id, not this string).
+VMNAME="${VMNAME:-fluid-node-example-${VMID}}"
+
+# STORAGE: exact pool id from Datacenter → Storage (`pvesm status` / UI). Examples: local-lvm, local-zfs.
+STORAGE="${STORAGE:-local-lvm}"
+
+# IMAGE: qcow path on THIS node — replace with wherever you staged Generic Cloud amd64.
+IMAGE="${IMAGE:-/var/lib/vz/template/iso/debian-12-genericcloud-amd64.qcow2}"
+
+# CPU/RAM — see header note outside this fence for sizing; single consolidated Debian+Docker VM on one node:
+# SOCKETS × CORES = total vcpus for the guest. Alternatives: 2×4 for throughput over simpler scheduling.
+SOCKETS="${SOCKETS:-1}"
+CORES="${CORES:-4}"
+MEMORY_MIB="${MEMORY_MIB:-8192}"
+
+# BRIDGE — must be the vmbr carrying the SAME L2 subnet as STATIC_IP/PREFIX/GW below (see `ip -br addr`, `/etc/network/interfaces`).
+# Typical homelab patterns: vmbr1 = LAB / tagged VLAN trunk; vmbr0 = bridged NIC or single flat LAN. Override exported BRIDGE=... if needed.
+BRIDGE="${BRIDGE:-vmbr1}"
+
+# Root disk GiB — cloud image arrives small; enlarge before heavy Docker use (example used in homelab Fluid node: 300).
+ROOT_GIB="${ROOT_GIB:-300}"
+
+# First login user keys — file on HYPERVISOR with public SSH keys (cloud-init pipes into ~/.ssh/authorized_keys).
+CI_USER="${CI_USER:-kpihx}"
+SSH_KEYS_FILE="${SSH_KEYS_FILE:-${HOME}/.ssh/authorized_keys}"
+
+# If no password is provided in env, prompt for it
+if [ -z "${CIPASSWORD:-}" ]; then
+  read -s -p "Enter password for user ${CI_USER} (leave blank to disable password login): " CIPASSWORD
+  echo
+fi
+
+# LAB static NIC config (NOT Tailscale). Replace placeholders with YOUR addressing.
+# Omit searchdomain unless you rely on DHCP-style DNS suffix; optional extra flag shown after cloud-init qm set.
+# Replace ALL three — no sane default; mismatched GW↔bridge is the usual “VM boots—no ping”.
+STATIC_IP="${STATIC_IP:-10.10.10.101}"
+PREFIX="${PREFIX:-24}"
+GATEWAY="${GATEWAY:-10.10.10.1}"
+# Public resolvers as placeholder only — swap for your DHCP/internal DNS IPs if discovery must stay LAN-only during bootstrap.
+DNS="${DNS:-1.1.1.1,8.8.8.8}"
+
+SEARCHDOMAIN="${SEARCHDOMAIN:-kpihxlabs.com}"
+# SEARCHDOMAIN="lab.example.invalid"    # uncomment if guest needs explicit DNS search suffix
+
+#
+# Blow away previous VM same id — REMOVE both lines entirely if risky for your fleet.
+qm destroy "${VMID}" --purge true 2>/dev/null || true
+
+#
+# Skeleton VM profile: QEMU guest agent (shutdown cooperation), virtio-SCSI plumbing, seabios-free UEFI path (OVMF + q35).
+# Alternate: omit `--bios ovmf`/`--machine q35` only if switching to BIOS + older machine type (unsupported for Debian cloud path here).
+qm create "${VMID}" \
+  --name "${VMNAME}" \
+  --agent enabled=1 \
+  --scsihw virtio-scsi-pci \
+  --boot order=scsi0 \
+  --ostype l26 \
+  --machine q35 \
+  --bios ovmf \
+  --cores "${CORES}" \
+  --sockets "${SOCKETS}" \
+  --memory "${MEMORY_MIB}"
+
+#
+# Inject Generic Cloud qcow → storage pool creates `vm-${VMID}-disk-0` by default — if differs, inspect `qm config "${VMID}"` and reuse exact `POOL:volume` line.
+qm importdisk "${VMID}" "${IMAGE}" "${STORAGE}"
+
+#
+# Attach root disk virtio-SCSI (+ iothread + discard/TRIM hints for thin backends). Alternate: toggle `discard=on` off on thick/non-TRIM pools.
+qm set "${VMID}" --scsi0 "${STORAGE}:vm-${VMID}-disk-0,iothread=1,discard=on"
+
+#
+# Grow block device BEFORE heavy first-boot usage (guest FS may auto-grow via cloud-init grow-root—verify df vs lsblk if mismatch).
+qm resize "${VMID}" scsi0 "${ROOT_GIB}G"
+
+#
+# UEFI nvram shim — omit flag + switch firmware fields only if consciously moving to BIOS/legacy workflow (normally keep for Debian cloud).
+qm set "${VMID}" --efidisk0 "${STORAGE}:4m,format=raw,pre-enrolled-keys=1"
+
+#
+# vTPM (optional extras). Uncomment ONLY if workloads need TPM-state or image complains —
+# omit on minimal setups / tiny pools hitting allocation errors:
+qm set "${VMID}" --tpmstate0 "${STORAGE}:1,version=v2.0"
+
+#
+# Bridge attach — virtio nic on vmbr aligned with STATIC_* above (`ip -br a`/`cat /etc/network/interfaces` resolves naming).
+qm set "${VMID}" --net0 virtio,bridge="${BRIDGE}"
+
+BASE_CI=( --ciuser "${CI_USER}" \
+  --sshkeys "${SSH_KEYS_FILE}" \
+  --ipconfig0 "ip=${STATIC_IP}/${PREFIX},gw=${GATEWAY}" \
+  --nameserver "${DNS}" )
+
+if [ -n "${CIPASSWORD:-}" ]; then
+  BASE_CI+=( --cipassword "${CIPASSWORD}" )
+fi
+
+#
+# Inject user + LAN IP + resolver list for cloud-init. Append searchdomain optionally.
+if [[ -n "${SEARCHDOMAIN}" ]]; then
+  qm set "${VMID}" "${BASE_CI[@]}" --searchdomain "${SEARCHDOMAIN}"
+else
+  qm set "${VMID}" "${BASE_CI[@]}"
+fi
+
+#
+# Proxmox cloud-init CDROM channel — REQUIRED so previous cloud-init knobs reach Debian image.
+qm set "${VMID}" --ide2 "${STORAGE}:cloudinit"
+
+#
+# Ensure qemu-guest-agent is installed via cloud-init vendor-data snippet
+SNIPPET_DIR="/var/lib/vz/snippets"
+SNIPPET_FILE="fluid-qemu-agent-${VMID}.yml"
+mkdir -p "${SNIPPET_DIR}"
+cat << 'EOF' > "${SNIPPET_DIR}/${SNIPPET_FILE}"
+#cloud-config
+package_update: true
+packages:
+  - qemu-guest-agent
+runcmd:
+  - systemctl start qemu-guest-agent
+EOF
+qm set "${VMID}" --cicustom "vendor=local:snippets/${SNIPPET_FILE}"
+
+#
+# Prefer serial-first headless consoles + virtio RNG speeding crypto during early apt/tls.
+qm set "${VMID}" --vga serial0 --serial0 socket
+qm set "${VMID}" --rng0 source=/dev/urandom
+
+#
+# Launch — attach serial from UI/`qm terminal` if SSH unreachable (wrong BRIDGE/IP).
+qm start "${VMID}"
