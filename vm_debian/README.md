@@ -31,22 +31,33 @@ make install \
 make purge VMID=102
 ```
 
+**Remote Purge (One-Liner):**
+```bash
+sudo bash -c "$(curl -sSL https://raw.githubusercontent.com/kpihx-labs/pve/master/vm_debian/scripts/purge.sh)"
+```
+
 ### 🌐 Remote Execution (One-Liner)
-Bootstrap directly via `curl` without cloning the repository.
+Ideal for bootstrapping new PVE nodes without cloning the entire repository. This method ensures you always use the latest version of the scripts directly from the source.
+
+> [!IMPORTANT]
+> Use `sudo bash -c "$(curl ...)"` to ensure environment variables are correctly passed to the sub-shell and that the script has the necessary privileges to execute `qm` commands.
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/kpihx-labs/pve/master/vm_debian/scripts/install.sh | \
-  VMID=110 \
-  VMNAME=fluid-pve-debian \
-  STORAGE=local-lvm \
+sudo STORAGE=local-zfs bash -c "$(curl -sSL https://raw.githubusercontent.com/kpihx-labs/pve/master/vm_debian/scripts/install.sh)"
+```
+
+#### Full Variable Example
+```bash
+sudo VMID=110 \
+  VMNAME=homelab \
+  STORAGE=local-zfs \
   CORES=4 \
   MEMORY_MIB=8192 \
   ROOT_GIB=300 \
   STATIC_IP=10.10.10.110 \
   GATEWAY=10.10.10.1 \
   BRIDGE=vmbr1 \
-  CI_USER=kpihx \
-  bash
+  bash -c "$(curl -sSL https://raw.githubusercontent.com/kpihx-labs/pve/master/vm_debian/scripts/install.sh)"
 ```
 
 ## Configurable Options
