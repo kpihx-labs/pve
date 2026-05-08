@@ -89,6 +89,9 @@ sudo bash -c "$(curl -sSL https://raw.githubusercontent.com/kpihx-labs/pve/maste
 - Proxmox `qm set --nameserver` is fed with only the first DNS entry because its Cloud-Init integration expects a single address there.
 - The richer DNS list still exists inside the generated guest files.
 - `purge.sh` removes both current and legacy snippet names to keep old hosts clean.
+- **First boot behavior**:
+    - **Timing**: ZSH environment installation starts automatically on the first boot but can take **1 to 2 minutes** to complete. Do not be surprised if the shell is still bash or tools are missing for the first few seconds of SSH connectivity.
+    - **Boot Logs**: You can monitor the provisioning progress in real-time through the Proxmox console or by running `tail -f /var/log/cloud-init-output.log` inside the guest VM.
 
 ## Serial console
 
