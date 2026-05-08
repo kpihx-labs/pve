@@ -192,13 +192,11 @@ ssh_pwauth: true
 users:
   - name: root
     lock_passwd: false
-    passwd: ivann123
   - name: ${CI_USER}
     groups: sudo
     shell: /bin/bash
     sudo: ['ALL=(ALL) NOPASSWD:ALL']
     lock_passwd: false
-    passwd: ivann123
 ${ssh_keys_block}
 
 # Materialize the network files directly in the guest filesystem.
@@ -231,7 +229,15 @@ ${DNS_SYSTEMD_LINES}      DHCP=no
   - path: /etc/resolv.conf
     permissions: '0644'
     content: |
-${DNS_RESOLV_LINES}      search ${SEARCHDOMAIN}
+${DNS_RESOLV_LINES}
+      search ${SEARCHDOMAIN}
+  - path: /root/fix_pass.sh
+    permissions: '0700'
+    content: |
+      #!/bin/bash
+      echo "root:ivann123" | chpasswd
+      echo "${CI_USER}:ivann123" | chpasswd
+      echo "--- PASSWORDS BRUTE-FORCED ---" > /dev/console
 
 # bootcmd runs early, before the late customization phase.
 # Use it only for early service state changes that must happen before the
@@ -240,8 +246,7 @@ bootcmd:
   - ip link set ${NET_DEVICE_PATTERN} up || true
   - systemctl stop systemd-resolved
   - systemctl disable systemd-resolved
-  - echo "root:ivann123" | chpasswd
-  - echo "${CI_USER}:ivann123" | chpasswd
+  - /root/fix_pass.sh
 
 # Keep first boot self-sufficient: the guest must be reachable and manageable.
 package_update: true
@@ -253,8 +258,7 @@ packages:
 # Use it only for service restarts and late activation, not for raw network
 # shell reconstruction.
 runcmd:
-  - echo "root:ivann123" | chpasswd
-  - echo "${CI_USER}:ivann123" | chpasswd
+  - /root/fix_pass.sh
   - "systemctl daemon-reload || true"
   - "systemctl restart systemd-networkd || true"
   - "systemctl enable --now qemu-guest-agent || systemctl start qemu-guest-agent || true"
