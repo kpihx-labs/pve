@@ -150,58 +150,42 @@ SNIPPET_DIR="/var/lib/vz/snippets"
 mkdir -p "${SNIPPET_DIR}"
 USER_SNIPPET_FILE="fluid-user-${VMID}.yml"
 META_SNIPPET_FILE="fluid-meta-${VMID}.yml"
-# Hashed password for 'pass123' (SHA-512)
-PASS_HASH='$6$HkajDJCJZvpt/uIt$27ToAvE0DzoJetk6JlYIcFK9NteSJ0gQwBM6R2XhMOzmhf.yzH6.eWPI642DWm8aRd2VwVkq32tt68Byy6J2S1'
 
-# 1. Meta-Data Snippet
-cat << 'EOF' > "/tmp/meta.tmp"
-instance-id: fluid-vm-${VMID}
+# 1. Meta-Data Snippet (Dynamic ID to force re-run)
+cat << EOF > "${SNIPPET_DIR}/${META_SNIPPET_FILE}"
+instance-id: fluid-vm-${VMID}-$(date +%s)
 local-hostname: ${VMNAME}
 EOF
-sed "s|\${VMID}|${VMID}|g; s|\${VMNAME}|${VMNAME}|g" "/tmp/meta.tmp" > "${SNIPPET_DIR}/${META_SNIPPET_FILE}"
 
-# 2. User-Data Snippet
-cat << 'EOF' > "/tmp/user.tmp"
+# 2. User-Data Snippet (Hardening only)
+cat << EOF > "${SNIPPET_DIR}/${USER_SNIPPET_FILE}"
 #cloud-config
-users:
-  - name: ${CI_USER}
-    groups: sudo
-    shell: /bin/bash
-    passwd: ${PASS_HASH}
-    sudo: 'ALL=(ALL) NOPASSWD:ALL'
-    ssh_authorized_keys:
-${SSH_KEYS_BLOCK}
 bootcmd:
   - touch /tmp/SNIPPET_ALIVE
   - systemctl mask systemd-resolved
   - systemctl mask systemd-networkd-wait-online
   - rm -f /etc/resolv.conf
-  - printf "nameserver ${DNS_IP}\n" > /etc/resolv.conf
+  - printf "nameserver ${DNS%%,*}\n" > /etc/resolv.conf
 package_update: true
 packages:
   - qemu-guest-agent
 runcmd:
   - rm -f /etc/resolv.conf
-  - printf "nameserver ${DNS_IP}\n" > /etc/resolv.conf
+  - printf "nameserver ${DNS%%,*}\n" > /etc/resolv.conf
   - [ systemctl, stop, systemd-resolved ] || true
   - [ systemctl, disable, systemd-resolved ] || true
   - [ systemctl, start, qemu-guest-agent ] || true
 EOF
 
-SSH_KEYS_BLOCK=$(sed 's/^/      - /' "${TMP_KEYS}")
-DNS_IP="${DNS%%,*}"
-
-sed "s|\${CI_USER}|${CI_USER}|g; s|\${PASS_HASH}|${PASS_HASH}|g; s|\${DNS_IP}|${DNS_IP}|g" "/tmp/user.tmp" > "/tmp/user.tmp.2"
-# Use a separate step for the block to avoid sed issues with newlines
-sed -e "/\${SSH_KEYS_BLOCK}/r ${TMP_KEYS}" -e "/\${SSH_KEYS_BLOCK}/d" "/tmp/user.tmp.2" > "/tmp/user.tmp.3"
-# Fix indentation for the included keys
-sed -i 's/^ssh-/      - ssh-/' "/tmp/user.tmp.3"
-mv "/tmp/user.tmp.3" "${SNIPPET_DIR}/${USER_SNIPPET_FILE}"
-
 qm set "${VMID}" --cicustom "user=local:snippets/${USER_SNIPPET_FILE},meta=local:snippets/${META_SNIPPET_FILE}"
+qm set "${VMID}" --ciuser "${CI_USER}"
+qm set "${VMID}" --cipassword "${CIPASSWORD}"
+# Inject SSH keys via qm set for better compatibility
+SSH_KEYS_PVE=$(cat "${TMP_KEYS}" | tr '\n' ',')
+qm set "${VMID}" --sshkeys "$(echo "${SSH_KEYS_PVE}" | sed 's/,/%0A/g')"
+
 qm set "${VMID}" --net0 "virtio,bridge=${BRIDGE},firewall=0"
 qm set "${VMID}" --ipconfig0 "ip=${STATIC_IP}/${PREFIX},gw=${GATEWAY}"
-qm set "${VMID}" --cipassword "${CIPASSWORD}"
 
 rm -f "${TMP_KEYS}"
 
