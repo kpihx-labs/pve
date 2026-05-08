@@ -38,8 +38,22 @@ SSH_KEYS_FILE="${SSH_KEYS_FILE:-${HOME}/.ssh/authorized_keys}"
 
 # If no password is provided in env, prompt for it
 if [ -z "${CIPASSWORD:-}" ]; then
-  read -s -p "Enter password for user ${CI_USER} (leave blank to disable password login): " CIPASSWORD
-  echo
+  while true; do
+    read -s -p "Enter password for user ${CI_USER} (leave blank to disable password login): " PASS1
+    echo
+    if [ -z "$PASS1" ]; then
+      CIPASSWORD=""
+      break
+    fi
+    read -s -p "Confirm password: " PASS2
+    echo
+    if [ "$PASS1" = "$PASS2" ]; then
+      CIPASSWORD="$PASS1"
+      break
+    else
+      echo "Error: Passwords do not match. Please try again."
+    fi
+  done
 fi
 
 # LAB static NIC config (NOT Tailscale). Replace placeholders with YOUR addressing.
