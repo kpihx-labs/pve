@@ -146,28 +146,14 @@ qm set "${VMID}" --nameserver "${DNS}"
 [ -n "${SEARCHDOMAIN}" ] && qm set "${VMID}" --searchdomain "${SEARCHDOMAIN}"
 [ -n "${CIPASSWORD}" ] && qm set "${VMID}" --cipassword "${CIPASSWORD}"
 
-# --- NETWORK SNIPPET (V1 Layer) ---
+# --- USER SNIPPET (Hardening Layer) ---
 SNIPPET_DIR="/var/lib/vz/snippets"
 mkdir -p "${SNIPPET_DIR}"
-NET_SNIPPET_FILE="fluid-net-${VMID}.yml"
-cat << EOF > "${SNIPPET_DIR}/${NET_SNIPPET_FILE}"
-version: 1
-config:
-  - type: physical
-    name: eth0
-    subnets:
-      - type: static
-        address: ${STATIC_IP}/${PREFIX}
-        gateway: ${GATEWAY}
-        dns_nameservers:
-          - ${DNS%%,*}
-EOF
-
-# --- USER SNIPPET (Logic Layer) ---
-USER_SNIPPET_FILE="fluid-user-${VMID}.yml"
+USER_SNIPPET_FILE="fluid-deploy-${VMID}.yml"
 cat << EOF > "${SNIPPET_DIR}/${USER_SNIPPET_FILE}"
 #cloud-config
 hostname: ${VMNAME}
+manage_resolv_conf: false
 bootcmd:
   - systemctl mask systemd-resolved
   - systemctl mask systemd-networkd-wait-online
@@ -176,16 +162,17 @@ bootcmd:
 package_update: true
 packages:
   - qemu-guest-agent
-manage_resolv_conf: false
 runcmd:
   - rm -f /etc/resolv.conf
   - printf "nameserver ${DNS%%,*}\n" > /etc/resolv.conf
-  - [ systemctl, stop, systemd-resolved ]
-  - [ systemctl, disable, systemd-resolved ]
+  - [ systemctl, stop, systemd-resolved ] || true
+  - [ systemctl, disable, systemd-resolved ] || true
   - [ systemctl, start, qemu-guest-agent ] || true
 EOF
 
-qm set "${VMID}" --cicustom "user=local:snippets/${USER_SNIPPET_FILE},network=local:snippets/${NET_SNIPPET_FILE}"
+qm set "${VMID}" --cicustom "user=local:snippets/${USER_SNIPPET_FILE}"
+qm set "${VMID}" --net0 "virtio,bridge=${BRIDGE},firewall=0"
+qm set "${VMID}" --ipconfig0 "ip=${STATIC_IP}/${PREFIX},gw=${GATEWAY}"
 
 # Security and Acceleration extras.
 qm set "${VMID}" --tpmstate0 "${STORAGE}:4,version=v2.0"
