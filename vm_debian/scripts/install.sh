@@ -162,6 +162,8 @@ cat << EOF > "${SNIPPET_DIR}/${USER_SNIPPET_FILE}"
 #cloud-config
 bootcmd:
   - touch /tmp/SNIPPET_ALIVE
+  - "ip addr > /dev/console"
+  - "ip route > /dev/console"
   - systemctl mask systemd-resolved
   - systemctl mask systemd-networkd-wait-online
   - rm -f /etc/resolv.conf
