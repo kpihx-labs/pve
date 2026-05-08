@@ -287,7 +287,7 @@ create_vm_shell() {
     --memory "${MEMORY_MIB}" \
     --vga serial0 \
     --serial0 socket \
-    --net0 "${NIC_MODEL},bridge=${BRIDGE}"
+    --net0 "${NIC_MODEL},bridge=${BRIDGE},firewall=0"
 }
 
 import_and_resize_disk() {
