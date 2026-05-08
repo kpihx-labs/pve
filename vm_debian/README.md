@@ -120,15 +120,15 @@ Add a block like this:
 ```ssh
 Host pve-debian
     ProxyJump pve
-    HostName 10.10.10.101
-    User kpihx
+    HostName ${STATIC_IP}
+    User ${CI_USER}
     ForwardAgent yes
 ```
 
 **Note on Host Key Verification**: 
 If you have reinstalled the VM, your PC will complain that the "REMOTE HOST IDENTIFICATION HAS CHANGED". Clear the old key with:
 ```bash
-ssh-keygen -f '~/.ssh/known_hosts' -R '10.10.10.101'
+ssh-keygen -f '~/.ssh/known_hosts' -R '${STATIC_IP}'
 ```
 
 Then connect normally:
@@ -165,8 +165,8 @@ sudo systemctl restart ssh
 
 | Method | Target | Auth | Context |
 | :--- | :--- | :--- | :--- |
-| **SSH** | `kpihx@pve-debian` | SSH Key | Standard remote operation. |
-| **Console** | `sudo qm terminal 101` | `kpihx` password | Local PVE recovery (serial). |
-| **Root Access** | `sudo -i` or `sudo -s` | `kpihx` password | Privilege escalation within a session. |
+| **SSH** | `${CI_USER}@pve-debian` | SSH Key | Standard remote operation. |
+| **Console** | `sudo qm terminal <VMID>` | `${CI_USER}` password | Local PVE recovery (serial). |
+| **Root Access** | `sudo -i` or `sudo -s` | `${CI_USER}` password | Privilege escalation within a session. |
 
 Direct `root` login is disabled by default (no password set). Always enter as your user and escalate via `sudo`.
