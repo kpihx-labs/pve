@@ -6,7 +6,7 @@ set -eu
 VMID="${VMID:-101}"
 
 # VMNAME: label in Proxmox UI only (Fluid keys off Fabric host id, not this string).
-VMNAME="${VMNAME:-fluid-node-example-${VMID}}"
+VMNAME="${VMNAME:-fluid-pve-debian}"
 
 # STORAGE: exact pool id from Datacenter → Storage (`pvesm status` / UI). Examples: local-lvm, local-zfs.
 STORAGE="${STORAGE:-local-lvm}"
