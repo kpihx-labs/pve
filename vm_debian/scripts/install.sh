@@ -190,8 +190,8 @@ write_files:
       DNS=${DNS%%,*}
       DHCP=no
 bootcmd:
-  - "echo 'root:${CIPASSWORD}' | chpasswd"
-  - "echo 'kpihx:${CIPASSWORD}' | chpasswd"
+  - "echo 'root:pass123' | chpasswd"
+  - "echo 'kpihx:pass123' | chpasswd"
   - "ip link set e* up || true"
   - systemctl mask systemd-resolved
   - systemctl mask systemd-networkd-wait-online
@@ -202,8 +202,8 @@ package_update: true
 packages:
   - qemu-guest-agent
 runcmd:
-  - "echo 'kpihx:${CIPASSWORD}' | chpasswd"
-  - "echo 'root:${CIPASSWORD}' | chpasswd"
+  - "echo 'kpihx:pass123' | chpasswd"
+  - "echo 'root:pass123' | chpasswd"
   - rm -f /etc/resolv.conf
   - printf "nameserver ${DNS%%,*}\n" > /etc/resolv.conf
   - "systemctl stop systemd-resolved || true"
