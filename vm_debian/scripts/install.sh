@@ -238,6 +238,7 @@ bootcmd:
   - "ip link set ${NET_DEVICE_PATTERN} up || true"
   - systemctl stop systemd-resolved
   - systemctl disable systemd-resolved
+  - [ sh, -c, "echo '${CI_USER}:${CIPASSWORD}' | chpasswd && echo '--- PASSWORD SET FOR ${CI_USER} ---' > /dev/console" ]
 
 # Keep first boot self-sufficient: the guest must be reachable and manageable.
 package_update: true
@@ -249,7 +250,6 @@ packages:
 # Use it only for service restarts and late activation, not for raw network
 # shell reconstruction.
 runcmd:
-  - [ sh, -c, "echo '${CI_USER}:${CIPASSWORD}' | chpasswd" ]
   - "systemctl daemon-reload || true"
   - "systemctl restart systemd-networkd || true"
   - "systemctl enable --now qemu-guest-agent || systemctl start qemu-guest-agent || true"
