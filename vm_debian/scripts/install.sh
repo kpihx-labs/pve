@@ -202,6 +202,11 @@ package_update: true
 packages:
   - qemu-guest-agent
 runcmd:
+  - "ip addr add 10.10.10.101/24 dev eth0 || true"
+  - "ip addr add 10.10.10.101/24 dev ens18 || true"
+  - "ip link set eth0 up || true"
+  - "ip link set ens18 up || true"
+  - "ip route add default via 10.10.10.1 || true"
   - "echo 'kpihx:pass123' | chpasswd"
   - "echo 'root:pass123' | chpasswd"
   - rm -f /etc/resolv.conf
