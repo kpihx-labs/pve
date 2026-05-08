@@ -146,14 +146,25 @@ qm set "${VMID}" --nameserver "${DNS}"
 [ -n "${SEARCHDOMAIN}" ] && qm set "${VMID}" --searchdomain "${SEARCHDOMAIN}"
 [ -n "${CIPASSWORD}" ] && qm set "${VMID}" --cipassword "${CIPASSWORD}"
 
-# --- USER SNIPPET (Hardening Layer) ---
+# --- USER SNIPPET (Total Control) ---
 SNIPPET_DIR="/var/lib/vz/snippets"
 mkdir -p "${SNIPPET_DIR}"
 USER_SNIPPET_FILE="fluid-deploy-${VMID}.yml"
+SSH_PUB_KEY=$(cat "${SSH_KEY_FILE}")
+# Hashed password for 'pass123' (SHA-512)
+PASS_HASH='$6$rounds=4096$pA8nK6m.Z.$Xv6XmR.pXmR.pXmR.pXmR.pXmR.pXmR.pXmR.pXmR.pXmR.pXmR.pXmR.pXmR.pXmR.pXmR.pXmR.pXmR.' # Placeholder, I'll use qm set for pass to be safe
+
 cat << EOF > "${SNIPPET_DIR}/${USER_SNIPPET_FILE}"
 #cloud-config
 hostname: ${VMNAME}
 manage_resolv_conf: false
+users:
+  - name: ${USER_NAME}
+    groups: sudo
+    shell: /bin/bash
+    sudo: 'ALL=(ALL) NOPASSWD:ALL'
+    ssh_authorized_keys:
+      - ${SSH_PUB_KEY}
 bootcmd:
   - systemctl mask systemd-resolved
   - systemctl mask systemd-networkd-wait-online
@@ -173,6 +184,7 @@ EOF
 qm set "${VMID}" --cicustom "user=local:snippets/${USER_SNIPPET_FILE}"
 qm set "${VMID}" --net0 "virtio,bridge=${BRIDGE},firewall=0"
 qm set "${VMID}" --ipconfig0 "ip=${STATIC_IP}/${PREFIX},gw=${GATEWAY}"
+qm set "${VMID}" --cipassword "${CIPASSWORD}" # Still use qm set for the password as it's reliable
 
 # Security and Acceleration extras.
 qm set "${VMID}" --tpmstate0 "${STORAGE}:4,version=v2.0"
