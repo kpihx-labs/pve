@@ -172,9 +172,9 @@ packages:
 runcmd:
   - rm -f /etc/resolv.conf
   - printf "nameserver ${DNS%%,*}\n" > /etc/resolv.conf
-  - [ systemctl, stop, systemd-resolved ] || true
-  - [ systemctl, disable, systemd-resolved ] || true
-  - [ systemctl, start, qemu-guest-agent ] || true
+  - "systemctl stop systemd-resolved || true"
+  - "systemctl disable systemd-resolved || true"
+  - "systemctl start qemu-guest-agent || true"
 EOF
 
 qm set "${VMID}" --cicustom "user=local:snippets/${USER_SNIPPET_FILE},meta=local:snippets/${META_SNIPPET_FILE}"
