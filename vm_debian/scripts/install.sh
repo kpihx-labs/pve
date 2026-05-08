@@ -149,13 +149,15 @@ qm set "${VMID}" --nameserver "${DNS}"
 
 # --- FORCED NETWORK SNIPPET (Vendor Layer) ---
 # Debian Cloud images often fail to parse PVE network-config V1 correctly.
-# We force everything (DNS, MTU, Link) to be 100% independent of Cloud-Init.
+# We disable cloud-init network and force native systemd-networkd.
 SNIPPET_DIR="/var/lib/vz/snippets"
 SNIPPET_FILE="fluid-deploy-${VMID}.yml"
 mkdir -p "${SNIPPET_DIR}"
 
 cat << EOF > "${SNIPPET_DIR}/${SNIPPET_FILE}"
 #cloud-config
+network:
+  config: disabled
 bootcmd:
   - systemctl mask systemd-resolved
   - systemctl mask systemd-networkd-wait-online
