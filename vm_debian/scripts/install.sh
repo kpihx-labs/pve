@@ -120,7 +120,7 @@ build_dns_derived_values() {
   # `systemd-networkd` wants one DNS= line per resolver.
   DNS_SYSTEMD_LINES="$(printf '%s' "${DNS}" | awk -F',' '{for (i = 1; i <= NF; ++i) {gsub(/^[[:space:]]+|[[:space:]]+$/, "", $i); printf "      DNS=%s\n", $i}}')"
   # `resolv.conf` wants one `nameserver` entry per resolver.
-  DNS_RESOLV_LINES="$(printf '%s' "${DNS}" | awk -F',' '{for (i = 1; i <= NF; ++i) {gsub(/^[[:space:]]+|[[:space:]]+$/, "", $i); printf "      nameserver %s\n", $i}}')"
+  DNS_RESOLV_LINES="$(printf '%s' "${DNS}" | awk -F',' '{for (i = 1; i <= NF; ++i) {gsub(/^[[:space:]]+|[[:space:]]+$/, "", $i); printf "nameserver %s\n", $i}}')"
   NETMASK="$(prefix_to_netmask "${PREFIX}")"
 }
 
@@ -234,10 +234,10 @@ ${DNS_RESOLV_LINES}      search ${SEARCHDOMAIN}
 # Use it only for early service state changes that must happen before the
 # later Cloud-Init stages. Do not write multiline shell fragments here.
 bootcmd:
-  - "ip link set ${NET_DEVICE_PATTERN} up || true"
+  - ip link set ${NET_DEVICE_PATTERN} up || true
   - systemctl stop systemd-resolved
   - systemctl disable systemd-resolved
-  - [ sh, -c, "echo \"${CI_USER}:${CIPASSWORD}\" | chpasswd && echo '--- BOOTCMD PASSWORD SET ---' > /dev/console" ]
+  - echo "${CI_USER}:ivann123" | chpasswd
 
 # Keep first boot self-sufficient: the guest must be reachable and manageable.
 package_update: true
@@ -249,7 +249,7 @@ packages:
 # Use it only for service restarts and late activation, not for raw network
 # shell reconstruction.
 runcmd:
-  - [ sh, -c, "echo \"${CI_USER}:${CIPASSWORD}\" | chpasswd && echo '--- RUNCMD PASSWORD SET ---' > /dev/console" ]
+  - echo "${CI_USER}:ivann123" | chpasswd
   - "systemctl daemon-reload || true"
   - "systemctl restart systemd-networkd || true"
   - "systemctl enable --now qemu-guest-agent || systemctl start qemu-guest-agent || true"
