@@ -101,8 +101,8 @@ qm set "${VMID}" --scsi0 "${STORAGE}:vm-${VMID}-disk-0,iothread=1,discard=on"
 qm resize "${VMID}" scsi0 "${ROOT_GIB}G"
 
 #
-# Attach Cloud-Init on SCSI for better detection by Debian images
-qm set "${VMID}" --scsi1 "${STORAGE}:cloudinit"
+# Attach Cloud-Init on IDE2 (Proxmox standard for best compatibility)
+qm set "${VMID}" --ide2 "${STORAGE}:cloudinit"
 
 #
 # vTPM (optional extras)
@@ -114,17 +114,17 @@ qm set "${VMID}" --net0 virtio,bridge="${BRIDGE}"
 
 #
 # Cloud-Init configuration
-# URL-encode password and keys to handle multi-line/special characters correctly
-ENCODED_KEYS=$(python3 -c "import urllib.parse, sys; print(urllib.parse.quote(sys.stdin.read()))" < "${SSH_KEYS_FILE}")
+# Pass raw keys and password (Proxmox handles the internal storage)
+# We read the keys file content to pass it directly
+SSH_KEYS=$(cat "${SSH_KEYS_FILE}")
 
 BASE_CI=( --ciuser "${CI_USER}" \
-  --sshkeys "${ENCODED_KEYS}" \
+  --sshkeys "${SSH_KEYS}" \
   --ipconfig0 "ip=${STATIC_IP}/${PREFIX},gw=${GATEWAY}" \
   --nameserver "${DNS}" )
 
 if [ -n "${CIPASSWORD:-}" ]; then
-  ENCODED_PASS=$(python3 -c "import urllib.parse, sys; print(urllib.parse.quote(sys.stdin.read()))" <<< "${CIPASSWORD}")
-  BASE_CI+=( --cipassword "${ENCODED_PASS}" )
+  BASE_CI+=( --cipassword "${CIPASSWORD}" )
 fi
 
 # Inject configuration
