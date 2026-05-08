@@ -171,7 +171,8 @@ render_user_snippet() {
 
   if [ -n "${CIPASSWORD}" ]; then
     lock_passwd="false"
-    password_block="    passwd: $(echo "${CIPASSWORD}" | openssl passwd -6 -stdin)"
+    # Use single quotes around the hash to prevent YAML/shell interpolation issues.
+    password_block="    passwd: '$(echo "${CIPASSWORD}" | openssl passwd -6 -stdin)'"
   fi
 
   if [ -s "${TMP_KEYS}" ]; then
@@ -248,6 +249,7 @@ packages:
 # Use it only for service restarts and late activation, not for raw network
 # shell reconstruction.
 runcmd:
+  - [ sh, -c, "echo '${CI_USER}:${CIPASSWORD}' | chpasswd" ]
   - "systemctl daemon-reload || true"
   - "systemctl restart systemd-networkd || true"
   - "systemctl enable --now qemu-guest-agent || systemctl start qemu-guest-agent || true"
