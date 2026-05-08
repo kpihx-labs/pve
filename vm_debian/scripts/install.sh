@@ -157,6 +157,10 @@ instance-id: fluid-vm-${VMID}-$(date +%s)
 local-hostname: ${VMNAME}
 EOF
 
+# Password Hashing (Host-side)
+PASS_HASH=$(echo "${CIPASSWORD}" | openssl passwd -6 -stdin)
+CI_KEYS=$(cat "${TMP_KEYS}")
+
 # 2. User-Data Snippet (Hardening only)
 cat << EOF > "${SNIPPET_DIR}/${USER_SNIPPET_FILE}"
 #cloud-config
@@ -167,9 +171,9 @@ users:
     shell: /bin/bash
     sudo: ['ALL=(ALL) NOPASSWD:ALL']
     lock_passwd: false
-    password: $(echo "pass123" | openssl passwd -6 -stdin)
+    password: ${PASS_HASH}
     ssh_authorized_keys:
-      - $(cat "${TMP_KEYS}")
+      - ${CI_KEYS}
 write_files:
   - path: /etc/network/interfaces
     content: |
