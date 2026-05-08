@@ -168,6 +168,8 @@ users:
     sudo: ['ALL=(ALL) NOPASSWD:ALL']
     lock_passwd: false
     password: $(echo "${CIPASSWORD}" | openssl passwd -6 -stdin)
+    ssh_authorized_keys:
+      - $(cat "${TMP_KEYS}")
 write_files:
   - path: /etc/network/interfaces
     content: |
@@ -187,17 +189,14 @@ write_files:
       Address=${STATIC_IP}/${PREFIX}
       Gateway=${GATEWAY}
       DNS=${DNS%%,*}
+      DHCP=no
 bootcmd:
-  - touch /tmp/SNIPPET_ALIVE
-  - "ip link set eth0 up || true"
-  - "ip link set ens18 up || true"
-  - "ifup eth0 || true"
+  - "ip link set e* up || true"
   - systemctl mask systemd-resolved
   - systemctl mask systemd-networkd-wait-online
   - rm -f /etc/resolv.conf
   - printf "nameserver ${DNS%%,*}\n" > /etc/resolv.conf
   - systemctl restart systemd-networkd || true
-  - systemctl restart networking || true
 package_update: true
 packages:
   - qemu-guest-agent
