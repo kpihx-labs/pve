@@ -63,9 +63,11 @@ echo "--- Configuring Cloud-Init ---"
 qm set "${VMID}" --ide2 "${STORAGE}:cloudinit"
 qm set "${VMID}" --ciuser "${CI_USER}"
 
-# Injection SSH ultra-propre (supprime les sauts de ligne initiaux/finaux)
-CLEAN_KEYS=$(cat "${SSH_KEYS_FILE}" | xargs echo -n)
-qm set "${VMID}" --sshkeys "${CLEAN_KEYS}"
+# Injection SSH ultra-propre via fichier temporaire (évite les erreurs de parsing CLI)
+TMP_KEYS=$(mktemp)
+cat "${SSH_KEYS_FILE}" | grep -v "^$" > "${TMP_KEYS}" || true
+qm set "${VMID}" --sshkeys "${TMP_KEYS}"
+rm -f "${TMP_KEYS}"
 
 qm set "${VMID}" --ipconfig0 "ip=${STATIC_IP}/${PREFIX},gw=${GATEWAY}"
 qm set "${VMID}" --nameserver "${DNS}"
