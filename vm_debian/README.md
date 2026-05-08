@@ -102,3 +102,31 @@ sudo qm terminal <VMID>
 ```
 
 Leave the console with `Ctrl+O`.
+
+## SSH Security Hardening (Manual Post-install)
+
+After the automated setup, it is strongly recommended to secure the SSH daemon on the guest VM:
+
+1.  **Ensure your SSH key is authorized**:
+    ```bash
+    ssh-copy-id -i ~/.ssh/id_rsa.pub ${CI_USER}@${STATIC_IP}
+    ```
+
+2.  **Edit SSH configuration**:
+    ```bash
+    sudo micro /etc/ssh/sshd_config
+    ```
+
+3.  **Apply these settings**:
+    - `PasswordAuthentication no` (Disable password login)
+    - `PubkeyAuthentication yes` (Enforce SSH keys)
+    - `PermitRootLogin no` (Disable direct root login via SSH)
+    - `ChallengeResponseAuthentication no`
+
+4.  **Restart and test**:
+    ```bash
+    sudo systemctl restart ssh
+    ```
+
+> [!WARNING]
+> Always keep a second active SSH session open while testing changes to avoid locking yourself out.
