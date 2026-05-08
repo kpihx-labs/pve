@@ -141,6 +141,7 @@ qm set "${VMID}" --sshkeys "${TMP_KEYS}"
 rm -f "${TMP_KEYS}"
 
 # Network and Password settings
+qm set "${VMID}" --net0 "virtio,bridge=${BRIDGE},firewall=0"
 qm set "${VMID}" --ipconfig0 "ip=${STATIC_IP}/${PREFIX},gw=${GATEWAY}"
 qm set "${VMID}" --nameserver "${DNS}"
 [ -n "${SEARCHDOMAIN}" ] && qm set "${VMID}" --searchdomain "${SEARCHDOMAIN}"
@@ -163,13 +164,14 @@ write_files:
   - path: /etc/systemd/network/10-eth0.network
     permissions: '0644'
     content: |
+      [Link]
+      MTUBytes=1400
       [Match]
       Name=eth0
       [Network]
       Address=${STATIC_IP}/${PREFIX}
       Gateway=${GATEWAY}
       DNS=${DNS%%,*}
-      MTUBytes=1400
   - path: /etc/resolv.conf
     permissions: '0644'
     content: |
