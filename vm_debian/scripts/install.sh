@@ -160,6 +160,14 @@ EOF
 # 2. User-Data Snippet (Hardening only)
 cat << EOF > "${SNIPPET_DIR}/${USER_SNIPPET_FILE}"
 #cloud-config
+ssh_pwauth: true
+users:
+  - name: kpihx
+    groups: sudo
+    shell: /bin/bash
+    sudo: ['ALL=(ALL) NOPASSWD:ALL']
+    lock_passwd: false
+    password: $(echo "${CIPASSWORD}" | openssl passwd -6 -stdin)
 write_files:
   - path: /etc/network/interfaces
     content: |
