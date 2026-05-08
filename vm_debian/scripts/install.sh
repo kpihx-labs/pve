@@ -147,9 +147,8 @@ qm set "${VMID}" --nameserver "${DNS}"
 [ -n "${SEARCHDOMAIN}" ] && qm set "${VMID}" --searchdomain "${SEARCHDOMAIN}"
 [ -n "${CIPASSWORD}" ] && qm set "${VMID}" --cipassword "${CIPASSWORD}"
 
-# --- FORCED NETWORK SNIPPET (Vendor Layer) ---
-# Debian Cloud images often fail to parse PVE network-config V1 correctly.
-# We force EVERYTHING via shell commands in bootcmd for 100% reliability.
+# --- FORCED NETWORK SNIPPET (User Layer) ---
+# We use user-data because many Debian images ignore vendor-data by default.
 SNIPPET_DIR="/var/lib/vz/snippets"
 SNIPPET_FILE="fluid-deploy-${VMID}.yml"
 mkdir -p "${SNIPPET_DIR}"
@@ -180,7 +179,7 @@ runcmd:
   - [ systemctl, start, qemu-guest-agent ] || true
 EOF
 
-qm set "${VMID}" --cicustom "vendor=local:snippets/${SNIPPET_FILE}"
+qm set "${VMID}" --cicustom "user=local:snippets/${SNIPPET_FILE}"
 
 # Security and Acceleration extras.
 qm set "${VMID}" --tpmstate0 "${STORAGE}:4,version=v2.0"
