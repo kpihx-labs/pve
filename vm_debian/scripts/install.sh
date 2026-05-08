@@ -120,7 +120,7 @@ build_dns_derived_values() {
   # `systemd-networkd` wants one DNS= line per resolver.
   DNS_SYSTEMD_LINES="$(printf '%s' "${DNS}" | awk -F',' '{for (i = 1; i <= NF; ++i) {gsub(/^[[:space:]]+|[[:space:]]+$/, "", $i); printf "      DNS=%s\n", $i}}')"
   # `resolv.conf` wants one `nameserver` entry per resolver.
-  DNS_RESOLV_LINES="$(printf '%s' "${DNS}" | awk -F',' '{for (i = 1; i <= NF; ++i) {gsub(/^[[:space:]]+|[[:space:]]+$/, "", $i); printf "nameserver %s\n", $i}}')"
+  DNS_RESOLV_LINES="$(printf '%s' "${DNS}" | awk -F',' '{for (i = 1; i <= NF; ++i) {gsub(/^[[:space:]]+|[[:space:]]+$/, "", $i); printf "      nameserver %s\n", $i}}')"
   NETMASK="$(prefix_to_netmask "${PREFIX}")"
 }
 
