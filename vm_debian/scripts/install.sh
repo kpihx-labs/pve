@@ -22,7 +22,7 @@ IMAGE="${IMAGE:-/var/lib/vz/template/iso/debian-12-genericcloud-amd64.qcow2}"
 # CPU/RAM — see header note outside this fence for sizing; single consolidated Debian+Docker VM on one node:
 # SOCKETS × CORES = total vcpus for the guest. Alternatives: 2×4 for throughput over simpler scheduling.
 SOCKETS="${SOCKETS:-1}"
-CORES="${CORES:-4}"
+CORES="${CORES:-2}"
 MEMORY_MIB="${MEMORY_MIB:-8192}"
 
 # BRIDGE — must be the vmbr carrying the SAME L2 subnet as STATIC_IP/PREFIX/GW below (see `ip -br addr`, `/etc/network/interfaces`).
