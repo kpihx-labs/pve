@@ -171,8 +171,7 @@ render_user_snippet() {
 
   if [ -n "${CIPASSWORD}" ]; then
     lock_passwd="false"
-    # Use single quotes around the hash to prevent YAML/shell interpolation issues.
-    password_block="    passwd: '$(echo "${CIPASSWORD}" | openssl passwd -6 -stdin)'"
+    password_block="    passwd: ${CIPASSWORD}"
   fi
 
   if [ -s "${TMP_KEYS}" ]; then
