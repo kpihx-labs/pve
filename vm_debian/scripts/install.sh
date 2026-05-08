@@ -7,6 +7,11 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
+# --- Smart User Detection ---
+REAL_USER="${SUDO_USER:-$(whoami)}"
+REAL_HOME=$(getent passwd "${REAL_USER}" | cut -d: -f6)
+echo "--- Running as root for user ${REAL_USER} (Home: ${REAL_HOME}) ---"
+
 # --- identity / sizing ---
 VMID="${VMID:-101}"
 VMNAME="${VMNAME:-homelab}"
@@ -17,10 +22,10 @@ CORES="${CORES:-2}"
 MEMORY_MIB="${MEMORY_MIB:-8192}"
 BRIDGE="${BRIDGE:-vmbr1}"
 ROOT_GIB="${ROOT_GIB:-300}"
-CI_USER="${CI_USER:-kpihx}"
+CI_USER="${CI_USER:-${REAL_USER}}"
 
-# SOURCE DE VERITE POUR LES CLES : On prend celles de kpihx@pve car elles contiennent Ubuntu
-SSH_KEYS_FILE="/home/kpihx/.ssh/authorized_keys"
+# Clés SSH : On fusionne root et l'utilisateur d'origine pour maximiser la flexibilité
+SSH_KEYS_FILES=("/root/.ssh/authorized_keys" "${REAL_HOME}/.ssh/authorized_keys")
 
 # Static IP config
 STATIC_IP="${STATIC_IP:-10.10.10.101}"
@@ -64,10 +69,17 @@ echo "--- Configuring Cloud-Init ---"
 qm set "${VMID}" --ide2 "${STORAGE}:cloudinit"
 qm set "${VMID}" --ciuser "${CI_USER}"
 
-# Injection SSH propre via fichier temporaire
+# Injection SSH fusionnée
 TMP_KEYS=$(mktemp)
-# On fusionne les clés de root@pve et kpihx@pve pour être sûr
-cat /root/.ssh/authorized_keys /home/kpihx/.ssh/authorized_keys 2>/dev/null | grep -v "^$" | sort -u > "${TMP_KEYS}"
+for keyfile in "${SSH_KEYS_FILES[@]}"; do
+  if [ -f "${keyfile}" ]; then
+    cat "${keyfile}" >> "${TMP_KEYS}"
+  fi
+done
+# Nettoyage et dédoublonnage
+sort -u "${TMP_KEYS}" -o "${TMP_KEYS}"
+sed -i '/^$/d' "${TMP_KEYS}"
+
 qm set "${VMID}" --sshkeys "${TMP_KEYS}"
 rm -f "${TMP_KEYS}"
 
@@ -76,7 +88,7 @@ qm set "${VMID}" --nameserver "${DNS}"
 [ -n "${SEARCHDOMAIN}" ] && qm set "${VMID}" --searchdomain "${SEARCHDOMAIN}"
 [ -n "${CIPASSWORD:-}" ] && qm set "${VMID}" --cipassword "${CIPASSWORD}"
 
-# --- SNIPPET DE FORCE (Network + Guest Agent) ---
+# --- FORCED NETWORK SNIPPET ---
 SNIPPET_DIR="/var/lib/vz/snippets"
 SNIPPET_FILE="fluid-deploy-${VMID}.yml"
 mkdir -p "${SNIPPET_DIR}"
@@ -99,4 +111,4 @@ qm set "${VMID}" --rng0 source=/dev/urandom
 
 echo "--- Launching VM ${VMID} ---"
 qm start "${VMID}"
-echo "--- SUCCESS: VM ${VMID} is booting with Forced Network and Merged SSH keys ---"
+echo "--- SUCCESS: VM ${VMID} is booting with Forced Network and Dynamic keys ---"
