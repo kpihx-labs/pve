@@ -151,6 +151,8 @@ mkdir -p "${SNIPPET_DIR}"
 USER_SNIPPET_FILE="fluid-user-${VMID}.yml"
 META_SNIPPET_FILE="fluid-meta-${VMID}.yml"
 SSH_PUB_KEY=$(cat "${TMP_KEYS}")
+# Hashed password for 'pass123' (SHA-512)
+PASS_HASH='$6$HkajDJCJZvpt/uIt$27ToAvE0DzoJetk6JlYIcFK9NteSJ0gQwBM6R2XhMOzmhf.yzH6.eWPI642DWm8aRd2VwVkq32tt68Byy6J2S1'
 
 # Meta-Data Snippet (for Hostname/InstanceID)
 cat << EOF > "${SNIPPET_DIR}/${META_SNIPPET_FILE}"
@@ -165,6 +167,7 @@ users:
   - name: ${CI_USER}
     groups: sudo
     shell: /bin/bash
+    passwd: ${PASS_HASH}
     sudo: 'ALL=(ALL) NOPASSWD:ALL'
     ssh_authorized_keys:
 $(sed 's/^/      - /' "${TMP_KEYS}")
