@@ -148,7 +148,7 @@ qm set "${VMID}" --nameserver "${DNS}"
 
 # --- FORCED NETWORK SNIPPET (Vendor Layer) ---
 # Debian Cloud images often fail to parse PVE network-config V1 correctly.
-# We provide a native systemd-networkd configuration to ensure clean boot and DNS.
+# We provide a native systemd-networkd configuration and force static DNS.
 SNIPPET_DIR="/var/lib/vz/snippets"
 SNIPPET_FILE="fluid-deploy-${VMID}.yml"
 mkdir -p "${SNIPPET_DIR}"
@@ -158,6 +158,7 @@ cat << EOF > "${SNIPPET_DIR}/${SNIPPET_FILE}"
 package_update: true
 packages:
   - qemu-guest-agent
+manage_resolv_conf: false
 write_files:
   - path: /etc/systemd/network/10-eth0.network
     permissions: '0644'
@@ -168,7 +169,13 @@ write_files:
       Address=${STATIC_IP}/${PREFIX}
       Gateway=${GATEWAY}
       DNS=${DNS%%,*}
+  - path: /etc/resolv.conf
+    permissions: '0644'
+    content: |
+      nameserver ${DNS%%,*}
 runcmd:
+  - [ systemctl, stop, systemd-resolved ]
+  - [ systemctl, disable, systemd-resolved ]
   - [ systemctl, restart, systemd-networkd ]
   - [ systemctl, start, qemu-guest-agent ]
 EOF
