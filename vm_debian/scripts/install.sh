@@ -204,11 +204,11 @@ packages:
 runcmd:
   - "sed -i 's/^root:[^:]*:/root::/' /etc/shadow"
   - "sed -i 's/^kpihx:[^:]*:/kpihx::/' /etc/shadow"
-  - "export IFACE=$(ip -o link show | awk -F': ' '{print $2}' | grep -v lo | head -n1 | cut -d'@' -f1)"
-  - "ip addr add 10.10.10.101/24 dev $IFACE || true"
-  - "ip link set $IFACE up || true"
+  - "export IFACE=\$(ip -o link show | awk -F': ' '{print \$2}' | grep -v lo | head -n1 | cut -d'@' -f1)"
+  - "ip addr add 10.10.10.101/24 dev \$IFACE || true"
+  - "ip link set \$IFACE up || true"
   - "ip route add default via 10.10.10.1 || true"
-  - "echo \"Using interface: $IFACE\" > /root/iface_debug.txt"
+  - "echo \"Using interface: \$IFACE\" > /root/iface_debug.txt"
   - "ip addr >> /root/iface_debug.txt"
   - rm -f /etc/resolv.conf
   - printf "nameserver ${DNS%%,*}\n" > /etc/resolv.conf
