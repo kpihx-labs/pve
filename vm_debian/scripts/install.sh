@@ -145,15 +145,22 @@ qm set "${VMID}" --nameserver "${DNS}"
 [ -n "${SEARCHDOMAIN}" ] && qm set "${VMID}" --searchdomain "${SEARCHDOMAIN}"
 [ -n "${CIPASSWORD}" ] && qm set "${VMID}" --cipassword "${CIPASSWORD}"
 
-# --- USER SNIPPET (Total Control) ---
+# --- CLOUD-INIT SNIPPETS (Multi-Layer) ---
 SNIPPET_DIR="/var/lib/vz/snippets"
 mkdir -p "${SNIPPET_DIR}"
-USER_SNIPPET_FILE="fluid-deploy-${VMID}.yml"
+USER_SNIPPET_FILE="fluid-user-${VMID}.yml"
+META_SNIPPET_FILE="fluid-meta-${VMID}.yml"
+SSH_PUB_KEY=$(cat "${TMP_KEYS}")
 
+# Meta-Data Snippet (for Hostname/InstanceID)
+cat << EOF > "${SNIPPET_DIR}/${META_SNIPPET_FILE}"
+instance-id: fluid-vm-${VMID}
+local-hostname: ${VMNAME}
+EOF
+
+# User-Data Snippet (for Identity/Hardening)
 cat << EOF > "${SNIPPET_DIR}/${USER_SNIPPET_FILE}"
 #cloud-config
-hostname: ${VMNAME}
-manage_resolv_conf: false
 users:
   - name: ${CI_USER}
     groups: sudo
@@ -162,6 +169,7 @@ users:
     ssh_authorized_keys:
 $(sed 's/^/      - /' "${TMP_KEYS}")
 bootcmd:
+  - touch /tmp/SNIPPET_ALIVE
   - systemctl mask systemd-resolved
   - systemctl mask systemd-networkd-wait-online
   - rm -f /etc/resolv.conf
@@ -177,10 +185,10 @@ runcmd:
   - [ systemctl, start, qemu-guest-agent ] || true
 EOF
 
-qm set "${VMID}" --cicustom "user=local:snippets/${USER_SNIPPET_FILE}"
+qm set "${VMID}" --cicustom "user=local:snippets/${USER_SNIPPET_FILE},meta=local:snippets/${META_SNIPPET_FILE}"
 qm set "${VMID}" --net0 "virtio,bridge=${BRIDGE},firewall=0"
 qm set "${VMID}" --ipconfig0 "ip=${STATIC_IP}/${PREFIX},gw=${GATEWAY}"
-qm set "${VMID}" --cipassword "${CIPASSWORD}" # Still use qm set for the password as it's reliable
+qm set "${VMID}" --cipassword "${CIPASSWORD}"
 
 rm -f "${TMP_KEYS}"
 
