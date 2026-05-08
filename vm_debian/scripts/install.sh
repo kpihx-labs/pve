@@ -167,7 +167,7 @@ EOF
 USER_SNIPPET_FILE="fluid-user-${VMID}.yml"
 cat << EOF > "${SNIPPET_DIR}/${USER_SNIPPET_FILE}"
 #cloud-config
-hostname: ${VM_NAME}
+hostname: ${VMNAME}
 bootcmd:
   - systemctl mask systemd-resolved
   - systemctl mask systemd-networkd-wait-online
