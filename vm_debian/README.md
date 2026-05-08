@@ -9,6 +9,7 @@ Provision and purge Debian Cloud-Init VMs on Proxmox VE.
 - **Deterministic first boot**: the installer renders both `ifupdown` and `systemd-networkd` static network files, then pins the first nameserver inside the Proxmox Cloud-Init layer.
 - **Host-aware DNS default**: when `DNS` is omitted, the installer reuses the current PVE host nameservers from `/etc/resolv.conf`.
 - **Deep purge**: VM config, ZFS leftovers, and Cloud-Init snippets are removed together.
+- **Virtio-first NIC**: the default guest NIC model is `virtio` because Debian cloud images reliably ship the matching drivers.
 
 ## Usage
 
@@ -72,6 +73,7 @@ sudo bash -c "$(curl -sSL https://raw.githubusercontent.com/kpihx-labs/pve/maste
 | `MEMORY_MIB` | RAM size in MiB | `8192` |
 | `ROOT_GIB` | Root disk size in GiB | `300` |
 | `BRIDGE` | Proxmox bridge carrying the target subnet | `vmbr1` |
+| `NIC_MODEL` | Proxmox guest NIC model | `virtio` |
 | `CI_USER` | Cloud-Init login user | invoking sudo user |
 | `CIPASSWORD` | Password for `CI_USER` | prompted if empty |
 | `STATIC_IP` | Guest static IPv4 address | `10.10.10.101` |

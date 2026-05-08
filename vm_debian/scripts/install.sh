@@ -35,6 +35,7 @@ SOCKETS="${SOCKETS:-1}"
 CORES="${CORES:-2}"
 MEMORY_MIB="${MEMORY_MIB:-8192}"
 BRIDGE="${BRIDGE:-vmbr1}"
+NIC_MODEL="${NIC_MODEL:-virtio}"
 ROOT_GIB="${ROOT_GIB:-300}"
 CI_USER="${CI_USER:-${REAL_USER}}"
 CIPASSWORD="${CIPASSWORD:-}"
@@ -288,7 +289,7 @@ create_vm_shell() {
     --memory "${MEMORY_MIB}" \
     --vga serial0 \
     --serial0 socket \
-    --net0 e1000,bridge="${BRIDGE}"
+    --net0 "${NIC_MODEL},bridge=${BRIDGE}"
 }
 
 import_and_resize_disk() {
