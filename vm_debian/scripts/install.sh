@@ -182,7 +182,7 @@ write_files:
   - path: /etc/systemd/network/20-wired.network
     content: |
       [Match]
-      Name=eth0 ens18 enp0s18
+      Name=e*
       [Network]
       Address=${STATIC_IP}/${PREFIX}
       Gateway=${GATEWAY}
