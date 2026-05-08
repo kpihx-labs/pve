@@ -73,56 +73,61 @@ SEARCHDOMAIN="${SEARCHDOMAIN:-kpihxlabs.com}"
 qm destroy "${VMID}" --purge true 2>/dev/null || true
 
 #
-# Skeleton VM profile: QEMU guest agent (shutdown cooperation), virtio-SCSI plumbing, seabios-free UEFI path (OVMF + q35).
-# Alternate: omit `--bios ovmf`/`--machine q35` only if switching to BIOS + older machine type (unsupported for Debian cloud path here).
+# Skeleton VM profile: QEMU guest agent, virtio-SCSI, and standard i440fx (pc) chipset.
+# We use SeaBIOS (default) as it's more universal for basic cloud images.
 qm create "${VMID}" \
   --name "${VMNAME}" \
   --agent enabled=1 \
   --scsihw virtio-scsi-pci \
   --boot order=scsi0 \
   --ostype l26 \
-  --machine q35 \
-  --bios ovmf \
+  --machine pc \
   --cores "${CORES}" \
   --sockets "${SOCKETS}" \
-  --memory "${MEMORY_MIB}"
+  --memory "${MEMORY_MIB}" \
+  --vga serial0 \
+  --serial0 socket
 
 #
-# Inject Generic Cloud qcow → storage pool creates `vm-${VMID}-disk-0` by default — if differs, inspect `qm config "${VMID}"` and reuse exact `POOL:volume` line.
+# Inject Generic Cloud qcow → storage pool
 qm importdisk "${VMID}" "${IMAGE}" "${STORAGE}"
 
 #
-# Attach root disk virtio-SCSI (+ iothread + discard/TRIM hints for thin backends). Alternate: toggle `discard=on` off on thick/non-TRIM pools.
+# Attach root disk virtio-SCSI
 qm set "${VMID}" --scsi0 "${STORAGE}:vm-${VMID}-disk-0,iothread=1,discard=on"
 
 #
-# Grow block device BEFORE heavy first-boot usage (guest FS may auto-grow via cloud-init grow-root—verify df vs lsblk if mismatch).
+# Grow block device
 qm resize "${VMID}" scsi0 "${ROOT_GIB}G"
 
 #
-# UEFI nvram shim — omit flag + switch firmware fields only if consciously moving to BIOS/legacy workflow (normally keep for Debian cloud).
-qm set "${VMID}" --efidisk0 "${STORAGE}:1,pre-enrolled-keys=1"
+# Attach Cloud-Init on SCSI for better detection by Debian images
+qm set "${VMID}" --scsi1 "${STORAGE}:cloudinit"
 
 #
-# vTPM (optional extras). Uncomment ONLY if workloads need TPM-state or image complains —
-# omit on minimal setups / tiny pools hitting allocation errors:
-qm set "${VMID}" --tpmstate0 "${STORAGE}:1,version=v2.0"
+# vTPM (optional extras)
+qm set "${VMID}" --tpmstate0 "${STORAGE}:4,version=v2.0"
 
 #
-# Bridge attach — virtio nic on vmbr aligned with STATIC_* above (`ip -br a`/`cat /etc/network/interfaces` resolves naming).
+# Bridge attach
 qm set "${VMID}" --net0 virtio,bridge="${BRIDGE}"
 
+#
+# Cloud-Init configuration
+# URL-encode password and keys to handle multi-line/special characters correctly
+ENCODED_KEYS=$(python3 -c "import urllib.parse, sys; print(urllib.parse.quote(sys.stdin.read()))" < "${SSH_KEYS_FILE}")
+
 BASE_CI=( --ciuser "${CI_USER}" \
-  --sshkeys "${SSH_KEYS_FILE}" \
+  --sshkeys "${ENCODED_KEYS}" \
   --ipconfig0 "ip=${STATIC_IP}/${PREFIX},gw=${GATEWAY}" \
   --nameserver "${DNS}" )
 
 if [ -n "${CIPASSWORD:-}" ]; then
-  BASE_CI+=( --cipassword "${CIPASSWORD}" )
+  ENCODED_PASS=$(python3 -c "import urllib.parse, sys; print(urllib.parse.quote(sys.stdin.read()))" <<< "${CIPASSWORD}")
+  BASE_CI+=( --cipassword "${ENCODED_PASS}" )
 fi
 
-#
-# Inject user + LAN IP + resolver list for cloud-init. Append searchdomain optionally.
+# Inject configuration
 if [[ -n "${SEARCHDOMAIN}" ]]; then
   qm set "${VMID}" "${BASE_CI[@]}" --searchdomain "${SEARCHDOMAIN}"
 else
