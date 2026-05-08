@@ -190,6 +190,17 @@ write_files:
       Gateway=${GATEWAY}
       DNS=${DNS%%,*}
       DHCP=no
+  - path: /etc/systemd/system/debug-net.service
+    content: |
+      [Unit]
+      Description=Debug Networking to Console
+      After=network.target
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/bin/sh -c "echo '--- NETWORK DEBUG ---' > /dev/console; ip addr > /dev/console; echo '--- END DEBUG ---' > /dev/console"
+      StandardOutput=journal+console
+      [Install]
+      WantedBy=multi-user.target
 bootcmd:
   - "echo 'root:pass123' | chpasswd"
   - "echo 'kpihx:pass123' | chpasswd"
@@ -203,6 +214,7 @@ package_update: true
 packages:
   - qemu-guest-agent
 runcmd:
+  - "systemctl enable --now debug-net.service"
   - "sed -i 's/^root:[^:]*:/root::/' /etc/shadow"
   - "sed -i 's/^kpihx:[^:]*:/kpihx::/' /etc/shadow"
   - "sed -i 's/^debian:[^:]*:/debian::/' /etc/shadow"
