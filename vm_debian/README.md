@@ -103,30 +103,70 @@ sudo qm terminal <VMID>
 
 Leave the console with `Ctrl+O`.
 
-## SSH Security Hardening (Manual Post-install)
+## SSH Access & Security Hardening
 
-After the automated setup, it is strongly recommended to secure the SSH daemon on the guest VM:
+After the automated setup, follow these steps to establish a secure, key-only connection.
 
-1.  **Ensure your SSH key is authorized**:
-    ```bash
-    ssh-copy-id -i ~/.ssh/id_rsa.pub ${CI_USER}@${STATIC_IP}
-    ```
+### 1. Client Configuration (on your local PC)
 
-2.  **Edit SSH configuration**:
-    ```bash
-    sudo micro /etc/ssh/sshd_config
-    ```
+If you are using a ProxyJump (e.g., jumping through your PVE host to reach the VM on `vmbr1`), update your `~/.ssh/config`:
 
-3.  **Apply these settings**:
-    - `PasswordAuthentication no` (Disable password login)
-    - `PubkeyAuthentication yes` (Enforce SSH keys)
-    - `PermitRootLogin no` (Disable direct root login via SSH)
-    - `ChallengeResponseAuthentication no`
+```bash
+# Edit your local SSH config
+micro ~/.ssh/config
+```
 
-4.  **Restart and test**:
-    ```bash
-    sudo systemctl restart ssh
-    ```
+Add a block like this:
+```ssh
+Host pve-debian
+    ProxyJump pve
+    HostName 10.10.10.101
+    User kpihx
+    ForwardAgent yes
+```
+
+**Note on Host Key Verification**: 
+If you have reinstalled the VM, your PC will complain that the "REMOTE HOST IDENTIFICATION HAS CHANGED". Clear the old key with:
+```bash
+ssh-keygen -f '~/.ssh/known_hosts' -R '10.10.10.101'
+```
+
+Then connect normally:
+```bash
+ssh pve-debian
+```
+
+### 2. Manual Server Hardening (inside the VM)
+
+Once connected, secure the SSH daemon:
+
+```bash
+sudo micro /etc/ssh/sshd_config
+```
+
+Apply and verify these settings:
+
+| Parameter | Recommended | Rationale |
+| :--- | :--- | :--- |
+| `PasswordAuthentication` | `no` | Prevents brute-force attacks by requiring SSH keys. |
+| `PubkeyAuthentication` | `yes` | Explicitly enables cryptographic key authentication. |
+| `PermitRootLogin` | `no` | Forces the use of a standard user + `sudo`, hiding the root account from SSH. |
+| `ChallengeResponseAuthentication` | `no` | Disables keyboard-interactive authentication (OATH, etc.). |
+
+**Restart and test**:
+```bash
+sudo systemctl restart ssh
+```
 
 > [!WARNING]
-> Always keep a second active SSH session open while testing changes to avoid locking yourself out.
+> Always keep your current SSH session open while testing. Open a **new** terminal and try to `ssh pve-debian` to confirm you can still get in before closing the first one.
+
+## Access Summary & Recovery
+
+| Method | Target | Auth | Context |
+| :--- | :--- | :--- | :--- |
+| **SSH** | `kpihx@pve-debian` | SSH Key | Standard remote operation. |
+| **Console** | `sudo qm terminal 101` | `kpihx` password | Local PVE recovery (serial). |
+| **Root Access** | `sudo -i` or `sudo -s` | `kpihx` password | Privilege escalation within a session. |
+
+Direct `root` login is disabled by default (no password set). Always enter as your user and escalate via `sudo`.
