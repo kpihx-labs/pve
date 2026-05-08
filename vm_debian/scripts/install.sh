@@ -159,6 +159,7 @@ EOF
 
 # 2. User-Data Snippet (Hardening only)
 cat << EOF > "${SNIPPET_DIR}/${USER_SNIPPET_FILE}"
+#cloud-config
 write_files:
   - path: /etc/network/interfaces
     content: |
