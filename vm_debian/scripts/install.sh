@@ -117,10 +117,12 @@ build_dns_derived_values() {
   PRIMARY_DNS="$(printf '%s' "${DNS}" | awk -F',' '{gsub(/^[[:space:]]+|[[:space:]]+$/, "", $1); print $1}')"
   # `interfaces` wants a space-separated resolver list.
   DNS_INTERFACES="$(printf '%s' "${DNS}" | awk -F',' '{for (i = 1; i <= NF; ++i) {gsub(/^[[:space:]]+|[[:space:]]+$/, "", $i); printf "%s%s", (i == 1 ? "" : " "), $i}}')"
-  # `systemd-networkd` wants one DNS= line per resolver.
+  
+  # Indentation matters for YAML! We force exactly 6 spaces for resolv.conf lines.
+  DNS_RESOLV_LINES="$(printf '%s' "${DNS}" | awk -F',' '{for (i = 1; i <= NF; ++i) {gsub(/^[[:space:]]+|[[:space:]]+$/, "", $i); printf "      nameserver %s\n", $i}}')"
+  # systemd-networkd DNS lines.
   DNS_SYSTEMD_LINES="$(printf '%s' "${DNS}" | awk -F',' '{for (i = 1; i <= NF; ++i) {gsub(/^[[:space:]]+|[[:space:]]+$/, "", $i); printf "      DNS=%s\n", $i}}')"
-  # `resolv.conf` wants one `nameserver` entry per resolver.
-  DNS_RESOLV_LINES="$(printf '%s' "${DNS}" | awk -F',' '{for (i = 1; i <= NF; ++i) {gsub(/^[[:space:]]+|[[:space:]]+$/, "", $i); printf "nameserver %s\n", $i}}')"
+  
   NETMASK="$(prefix_to_netmask "${PREFIX}")"
 }
 
@@ -163,17 +165,14 @@ EOF
 }
 
 render_user_snippet() {
-  # Cloud-Init accepts either a locked password or a pre-hashed password.
-  # Compute the exact variant before templating the YAML.
-  local lock_passwd="true"
-  local password_block=""
-  local ssh_keys_block=""
-
+  # Ensure the operator password block is correctly formatted if password exists.
+  local password_line=""
   if [ -n "${CIPASSWORD}" ]; then
-    lock_passwd="false"
-    password_block="    passwd: ${CIPASSWORD}"
+    password_line="    passwd: ${CIPASSWORD}"
   fi
 
+  # Format the SSH keys for YAML injection.
+  local ssh_keys_block=""
   if [ -s "${TMP_KEYS}" ]; then
     ssh_keys_block=$'    ssh_authorized_keys:\n'
     ssh_keys_block+="$(awk '{printf "      - %s\n", $0}' "${TMP_KEYS}")"
@@ -185,32 +184,24 @@ render_user_snippet() {
 hostname: ${VMNAME}
 fqdn: ${VMNAME}.${SEARCHDOMAIN}
 
-# Allow password SSH only when a password is intentionally configured.
+# Allow password SSH.
 ssh_pwauth: true
 
 # Create the primary operator account.
 users:
-  - name: root
-    lock_passwd: false
-    passwd: ivann123
-    ssh_authorized_keys:
-      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPFccivaDoAbo9/5CAzq/RYWh7yRnK1uoB3q76yXygjG KpihX-Ubuntu
   - name: ${CI_USER}
     groups: sudo
     shell: /bin/bash
     sudo: ['ALL=(ALL) NOPASSWD:ALL']
     lock_passwd: false
-    passwd: ivann123
-    ssh_authorized_keys:
-      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPFccivaDoAbo9/5CAzq/RYWh7yRnK1uoB3q76yXygjG KpihX-Ubuntu
+${password_line}
+${ssh_keys_block}
 
 # Materialize the network files directly in the guest filesystem.
 write_files:
   - path: /etc/network/interfaces
     permissions: '0644'
     content: |
-      # Legacy ifupdown view kept for compatibility with images or tools
-      # that still read /etc/network/interfaces during first boot.
       auto lo
       iface lo inet loopback
 
@@ -223,7 +214,6 @@ write_files:
   - path: /etc/systemd/network/20-wired.network
     permissions: '0644'
     content: |
-      # systemd-networkd view kept because Debian cloud images lean on it.
       [Match]
       Name=${NET_DEVICE_PATTERN}
 
@@ -236,69 +226,38 @@ ${DNS_SYSTEMD_LINES}      DHCP=no
     content: |
 ${DNS_RESOLV_LINES}
       search ${SEARCHDOMAIN}
-  - path: /root/fix_pass.sh
-    permissions: '0700'
-    content: |
-      #!/bin/bash
-      exec > /root/fix.log 2>&1
-      echo "--- STARTING PASS FIX ---"
-      echo "root:ivann123" | /usr/sbin/chpasswd
-      echo "${CI_USER}:ivann123" | /usr/sbin/chpasswd
-      echo "--- PASSWORDS BRUTE-FORCED ---"
-      echo "--- PASSWORDS BRUTE-FORCED ---" > /dev/console
-  - path: /etc/systemd/system/serial-getty@ttyS0.service.d/autologin.conf
-    permissions: '0644'
-    content: |
-      [Service]
-      ExecStart=
-      ExecStart=-/sbin/agetty --autologin root --keep-baud 115200,38400,9600 %I $TERM
-  - path: /etc/ssh/sshd_config.d/allow-password-auth.conf
-    permissions: '0644'
-    content: |
-      PasswordAuthentication yes
-      PermitRootLogin yes
 
-# bootcmd runs early, before the late customization phase.
+# bootcmd runs early.
 bootcmd:
   - ip link set ${NET_DEVICE_PATTERN} up || true
   - systemctl stop systemd-resolved
   - systemctl disable systemd-resolved
 
-# Keep first boot self-sufficient: the guest must be reachable and manageable.
+# Keep first boot self-sufficient.
 package_update: true
 packages:
   - qemu-guest-agent
   - openssh-server
 
-# runcmd runs later, once packages and most Cloud-Init stages have executed.
+# runcmd runs later.
 runcmd:
-  - echo "root:ivann123" | chpasswd
-  - echo "${CI_USER}:ivann123" | chpasswd
-  - systemctl daemon-reload
-  - systemctl restart serial-getty@ttyS0
-  - systemctl restart ssh
   - "systemctl restart systemd-networkd || true"
   - "systemctl enable --now qemu-guest-agent || systemctl start qemu-guest-agent || true"
+  - "systemctl enable --now ssh || systemctl restart ssh || true"
 EOF
 }
 
 deep_purge_existing_vm() {
-  # Rebuilds must start from a clean hypervisor state to avoid phantom disks,
-  # stale Cloud-Init state, and mis-leading Proxmox inventory leftovers.
   echo "--- Deep purging VM ${VMID} ---"
   qm stop "${VMID}" 2>/dev/null || true
   qm destroy "${VMID}" --purge true 2>/dev/null || true
 
   if command -v zfs >/dev/null 2>&1; then
-    echo "Checking for orphan ZFS datasets..."
-    # Proxmox can leave ZFS datasets behind when a destroy was interrupted.
     zfs list -H -o name 2>/dev/null | grep "vm-${VMID}-" | xargs -r -n1 zfs destroy -r 2>/dev/null || true
   fi
 }
 
 create_vm_shell() {
-  # This creates only the Proxmox shell around the future guest.
-  # The OS content itself arrives later through the imported cloud image.
   echo "--- Creating VM ${VMID} ---"
   qm create "${VMID}" \
     --name "${VMNAME}" \
@@ -316,8 +275,6 @@ create_vm_shell() {
 }
 
 import_and_resize_disk() {
-  # Import the cloud image into the target storage pool, then grow it to the
-  # final requested size before first boot.
   echo "--- Importing disk ---"
   qm importdisk "${VMID}" "${IMAGE}" "${STORAGE}"
   qm set "${VMID}" --scsi0 "${STORAGE}:vm-${VMID}-disk-0,iothread=1,discard=on"
@@ -325,30 +282,23 @@ import_and_resize_disk() {
 }
 
 apply_cloud_init_settings() {
-  # Bind the Cloud-Init drive and inject the first-boot network parameters
-  # that Proxmox itself knows how to expose to the guest.
   echo "--- Configuring Cloud-Init ---"
   qm set "${VMID}" --ide2 "${STORAGE}:cloudinit"
   qm set "${VMID}" --ciuser "${CI_USER}"
   qm set "${VMID}" --ipconfig0 "ip=${STATIC_IP}/${PREFIX},gw=${GATEWAY}"
 
-  # Proxmox Cloud-Init accepts a single nameserver string here; richer DNS
-  # handling is rendered inside the guest snippets below.
   qm set "${VMID}" --nameserver "${PRIMARY_DNS}"
   [ -n "${SEARCHDOMAIN}" ] && qm set "${VMID}" --searchdomain "${SEARCHDOMAIN}"
   [ -n "${CIPASSWORD}" ] && qm set "${VMID}" --cipassword "${CIPASSWORD}"
 
   if [ -s "${TMP_KEYS}" ]; then
-    # Only inject SSH keys when at least one real key exists.
     qm set "${VMID}" --sshkeys "${TMP_KEYS}"
   fi
 
-  # Attach the generated user-data and meta-data snippets.
   qm set "${VMID}" --cicustom "user=local:snippets/${USER_SNIPPET_FILE},meta=local:snippets/${META_SNIPPET_FILE}"
 }
 
 launch_vm() {
-  # TPM and RNG are optional runtime helpers but cheap to wire in here.
   qm set "${VMID}" --tpmstate0 "${STORAGE}:4,version=v2.0"
   qm set "${VMID}" --rng0 source=/dev/urandom
 
@@ -358,15 +308,11 @@ launch_vm() {
 }
 
 cleanup_local_temp() {
-  # The bundle file contains SSH public keys only, but it is still transient
-  # installer state and should not remain on disk.
   rm -f "${TMP_KEYS:-}"
 }
 
 main() {
-  # Surface the effective operator context before any mutation.
   echo "--- Running as root for user ${REAL_USER} (Home: ${REAL_HOME}) ---"
-
   prompt_password_if_needed
   detect_dns_if_needed
   build_dns_derived_values
