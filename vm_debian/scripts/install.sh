@@ -107,10 +107,8 @@ detect_dns_if_needed() {
     return
   fi
 
-  # Reusing the host resolvers is safer than hardcoding public DNS when the
-  # Proxmox node lives behind a site-specific network policy.
-  DNS="$(awk '/^nameserver[[:space:]]+/ {print $2}' /etc/resolv.conf | paste -sd, -)"
-  DNS="${DNS:-1.1.1.1,8.8.8.8}"
+  # Align with CT 100 (homelab) model: Local DNS + X DNS
+  DNS="10.10.10.10,129.104.30.41,129.104.201.51"
 }
 
 build_dns_derived_values() {
@@ -122,7 +120,7 @@ build_dns_derived_values() {
   # `systemd-networkd` wants one DNS= line per resolver.
   DNS_SYSTEMD_LINES="$(printf '%s' "${DNS}" | awk -F',' '{for (i = 1; i <= NF; ++i) {gsub(/^[[:space:]]+|[[:space:]]+$/, "", $i); printf "      DNS=%s\n", $i}}')"
   # `resolv.conf` wants one `nameserver` entry per resolver.
-  DNS_RESOLV_LINES="$(printf '%s' "${DNS}" | awk -F',' '{for (i = 1; i <= NF; ++i) {gsub(/^[[:space:]]+|[[:space:]]+$/, "", $i); printf "      nameserver %s\n", $i}}')"
+  DNS_RESOLV_LINES="$(printf '%s' "${DNS}" | awk -F',' '{for (i = 1; i <= NF; ++i) {gsub(/^[[:space:]]+|[[:space:]]+$/, "", $i); printf "nameserver %s\n", $i}}')"
   NETMASK="$(prefix_to_netmask "${PREFIX}")"
 }
 
@@ -237,8 +235,8 @@ ${DNS_RESOLV_LINES}      search ${SEARCHDOMAIN}
 # later Cloud-Init stages. Do not write multiline shell fragments here.
 bootcmd:
   - "ip link set ${NET_DEVICE_PATTERN} up || true"
-  - systemctl mask systemd-resolved
-  - systemctl mask systemd-networkd-wait-online
+  - systemctl stop systemd-resolved
+  - systemctl disable systemd-resolved
 
 # Keep first boot self-sufficient: the guest must be reachable and manageable.
 package_update: true
@@ -252,8 +250,6 @@ packages:
 runcmd:
   - "systemctl daemon-reload || true"
   - "systemctl restart systemd-networkd || true"
-  - "systemctl stop systemd-resolved || true"
-  - "systemctl disable systemd-resolved || true"
   - "systemctl enable --now qemu-guest-agent || systemctl start qemu-guest-agent || true"
   - "systemctl enable --now ssh || systemctl restart ssh || true"
 EOF
