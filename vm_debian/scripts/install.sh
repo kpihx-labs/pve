@@ -165,6 +165,7 @@ runcmd:
   - [ ip, link, set, eth0, up ]
   - [ ip, addr, add, "${STATIC_IP}/${PREFIX}", dev, eth0 ]
   - [ ip, route, add, default, via, "${GATEWAY}" ]
+  - echo "nameserver ${DNS%%,*}" > /etc/resolv.conf
   - [ systemctl, start, qemu-guest-agent ]
 EOF
 
