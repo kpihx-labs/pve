@@ -160,16 +160,19 @@ EOF
 # 2. User-Data Snippet (Hardening only)
 cat << EOF > "${SNIPPET_DIR}/${USER_SNIPPET_FILE}"
 write_files:
-  - path: /etc/systemd/network/20-eth0.network
+  - path: /etc/systemd/network/20-wired.network
     content: |
       [Match]
-      Name=eth0
+      Name=eth0 ens18 enp0s18
       [Network]
       Address=${STATIC_IP}/${PREFIX}
       Gateway=${GATEWAY}
       DNS=${DNS%%,*}
 bootcmd:
   - touch /tmp/SNIPPET_ALIVE
+  - "ip link set eth0 up || true"
+  - "ip link set ens18 up || true"
+  - "ip link set enp0s18 up || true"
   - systemctl mask systemd-resolved
   - systemctl mask systemd-networkd-wait-online
   - rm -f /etc/resolv.conf
