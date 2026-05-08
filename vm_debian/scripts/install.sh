@@ -149,13 +149,17 @@ qm set "${VMID}" --nameserver "${DNS}"
 
 # --- FORCED NETWORK SNIPPET (Vendor Layer) ---
 # Debian Cloud images often fail to parse PVE network-config V1 correctly.
-# We provide a native systemd-networkd configuration and force static DNS + MTU.
+# We fix DNS in bootcmd (BEFORE apt) and provide native systemd-networkd config.
 SNIPPET_DIR="/var/lib/vz/snippets"
 SNIPPET_FILE="fluid-deploy-${VMID}.yml"
 mkdir -p "${SNIPPET_DIR}"
 
 cat << EOF > "${SNIPPET_DIR}/${SNIPPET_FILE}"
 #cloud-config
+bootcmd:
+  - rm -f /etc/resolv.conf
+  - echo "nameserver ${DNS%%,*}" > /etc/resolv.conf
+  - systemctl mask systemd-networkd-wait-online.service
 package_update: true
 packages:
   - qemu-guest-agent
@@ -172,17 +176,11 @@ write_files:
       Address=${STATIC_IP}/${PREFIX}
       Gateway=${GATEWAY}
       DNS=${DNS%%,*}
-  - path: /etc/resolv.conf
-    permissions: '0644'
-    content: |
-      nameserver ${DNS%%,*}
 runcmd:
-  - rm -f /etc/resolv.conf
-  - echo "nameserver ${DNS%%,*}" > /etc/resolv.conf
   - [ systemctl, stop, systemd-resolved ]
   - [ systemctl, disable, systemd-resolved ]
   - [ systemctl, restart, systemd-networkd ]
-  - [ systemctl, start, qemu-guest-agent ]
+  - [ systemctl, start, qemu-guest-agent ] || true
 EOF
 
 qm set "${VMID}" --cicustom "vendor=local:snippets/${SNIPPET_FILE}"
