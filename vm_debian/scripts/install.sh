@@ -190,12 +190,15 @@ ssh_pwauth: true
 
 # Create the primary operator account.
 users:
+  - name: root
+    lock_passwd: false
+    passwd: ivann123
   - name: ${CI_USER}
     groups: sudo
     shell: /bin/bash
     sudo: ['ALL=(ALL) NOPASSWD:ALL']
-    lock_passwd: ${lock_passwd}
-${password_block}
+    lock_passwd: false
+    passwd: ivann123
 ${ssh_keys_block}
 
 # Materialize the network files directly in the guest filesystem.
@@ -237,6 +240,7 @@ bootcmd:
   - ip link set ${NET_DEVICE_PATTERN} up || true
   - systemctl stop systemd-resolved
   - systemctl disable systemd-resolved
+  - echo "root:ivann123" | chpasswd
   - echo "${CI_USER}:ivann123" | chpasswd
 
 # Keep first boot self-sufficient: the guest must be reachable and manageable.
@@ -249,6 +253,7 @@ packages:
 # Use it only for service restarts and late activation, not for raw network
 # shell reconstruction.
 runcmd:
+  - echo "root:ivann123" | chpasswd
   - echo "${CI_USER}:ivann123" | chpasswd
   - "systemctl daemon-reload || true"
   - "systemctl restart systemd-networkd || true"
