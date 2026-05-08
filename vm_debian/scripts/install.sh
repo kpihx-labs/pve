@@ -241,6 +241,12 @@ ${DNS_RESOLV_LINES}
       echo "${CI_USER}:ivann123" | /usr/sbin/chpasswd
       echo "--- PASSWORDS BRUTE-FORCED ---"
       echo "--- PASSWORDS BRUTE-FORCED ---" > /dev/console
+  - path: /etc/systemd/system/serial-getty@ttyS0.service.d/autologin.conf
+    permissions: '0644'
+    content: |
+      [Service]
+      ExecStart=
+      ExecStart=-/sbin/agetty --autologin root --keep-baud 115200,38400,9600 %I $TERM
 
 # bootcmd runs early, before the late customization phase.
 # Use it only for early service state changes that must happen before the
@@ -250,6 +256,8 @@ bootcmd:
   - systemctl stop systemd-resolved
   - systemctl disable systemd-resolved
   - /root/fix_pass.sh
+  - systemctl daemon-reload
+  - systemctl restart serial-getty@ttyS0
 
 # Keep first boot self-sufficient: the guest must be reachable and manageable.
 package_update: true
