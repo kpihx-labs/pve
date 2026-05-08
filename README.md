@@ -36,6 +36,24 @@ make install \
 make purge VMID=102
 ```
 
+### 🌐 Remote Execution (One-Liner)
+You can bootstrap a node directly via `curl` without cloning the repository. This is useful for initial setup on a fresh PVE host.
+
+```bash
+curl -sSL https://raw.githubusercontent.com/kpihx-labs/pve/master/vm_debian/scripts/install.sh | \
+  VMID=110 \
+  VMNAME=fluid-pve-debian \
+  STORAGE=local-lvm \
+  CORES=4 \
+  MEMORY_MIB=8192 \
+  ROOT_GIB=300 \
+  STATIC_IP=10.10.10.110 \
+  GATEWAY=10.10.10.1 \
+  BRIDGE=vmbr1 \
+  CI_USER=kpihx \
+  bash
+```
+
 ## Configurable Options
 
 | Variable | Description | Default |
