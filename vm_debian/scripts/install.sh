@@ -149,6 +149,7 @@ qm set "${VMID}" --nameserver "${DNS}"
 # --- FORCED NETWORK SNIPPET (Vendor Layer) ---
 # Debian Cloud images often fail to parse PVE network-config V1 correctly.
 # This vendor-data snippet forces the interface UP and applies the static IP on first boot.
+# We also mask systemd-networkd-wait-online to prevent the 2-minute boot hang.
 SNIPPET_DIR="/var/lib/vz/snippets"
 SNIPPET_FILE="fluid-deploy-${VMID}.yml"
 mkdir -p "${SNIPPET_DIR}"
@@ -158,6 +159,8 @@ cat << EOF > "${SNIPPET_DIR}/${SNIPPET_FILE}"
 package_update: true
 packages:
   - qemu-guest-agent
+bootcmd:
+  - systemctl mask systemd-networkd-wait-online.service
 runcmd:
   - [ ip, link, set, eth0, up ]
   - [ ip, addr, add, "${STATIC_IP}/${PREFIX}", dev, eth0 ]
