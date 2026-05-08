@@ -26,9 +26,6 @@ status: ## Git status --short
 push:  ## Push current branch to all remotes using xargs
 	@git remote | xargs -I {} git push {} $$(git branch --show-current)
 
-install: vm_debian_install ## Shortcut for vm_debian_install
-purge: vm_debian_purge ## Shortcut for vm_debian_purge
-
 # --- Dynamic targets for sub-modules ---
 # Usage: make vm_debian_install
 $(foreach dir,$(SUBDIR_NAMES),$(eval \
